@@ -1,0 +1,215 @@
+@import '@fontsource/playfair-display/400.css';
+@import '@fontsource/playfair-display/500.css';
+@import '@fontsource/playfair-display/600.css';
+@import '@fontsource/playfair-display/700.css';
+@import '@fontsource/playfair-display/400-italic.css';
+@import '@fontsource/playfair-display/500-italic.css';
+@import '@fontsource/plus-jakarta-sans/400.css';
+@import '@fontsource/plus-jakarta-sans/500.css';
+@import '@fontsource/plus-jakarta-sans/600.css';
+@import '@fontsource/plus-jakarta-sans/700.css';
+@import '@fontsource/jetbrains-mono/400.css';
+@import '@fontsource/jetbrains-mono/500.css';
+@import '@fontsource/jetbrains-mono/600.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+  --sf-safe-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+html, body, #root { height: 100%; }
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+  background: #FAF8F5;
+  color: #0F1720;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow-x: hidden;
+  font-feature-settings: 'ss01';
+}
+
+::selection {
+  background: #FFF0E7;
+  color: #0F1720;
+}
+
+/* ---------- Editorial type ---------- */
+.font-editorial {
+  font-family: 'Playfair Display', Georgia, serif;
+  font-weight: 500;
+  letter-spacing: -0.015em;
+  line-height: 1.02;
+}
+.font-editorial em, .editorial-italic {
+  font-style: italic;
+  font-family: 'Playfair Display', Georgia, serif;
+  font-weight: 500;
+}
+
+.font-mono, .mono {
+  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum' 1;
+}
+
+.label-caps {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #52606D;
+}
+
+/* ---------- Surfaces ---------- */
+.surface-paper {
+  background: #FAF8F5;
+  border: 1px solid rgba(15, 23, 32, 0.08);
+  border-radius: 1.75rem;
+  box-shadow: 0 1px 2px rgba(15,23,32,0.03), 0 12px 32px -18px rgba(15,23,32,0.12);
+}
+.surface-mist {
+  background: #F1ECE7;
+  border: 1px solid rgba(15, 23, 32, 0.06);
+  border-radius: 1.75rem;
+}
+.surface-coral {
+  background: #FFF0E7;
+  border: 1px solid rgba(224, 72, 38, 0.14);
+  border-radius: 1.75rem;
+}
+.surface-ink {
+  background: #0F1720;
+  color: #FAF8F5;
+  border-radius: 1.75rem;
+}
+.hairline { border-color: rgba(15, 23, 32, 0.10); }
+.hairline-t { border-top: 1px solid rgba(15, 23, 32, 0.10); }
+.hairline-b { border-bottom: 1px solid rgba(15, 23, 32, 0.10); }
+
+.hover-lift {
+  transition-property: transform, box-shadow, background-color;
+  transition-duration: 200ms;
+  transition-timing-function: cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+.hover-lift:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 2px 4px rgba(15,23,32,0.04), 0 24px 48px -20px rgba(15,23,32,0.20);
+}
+
+/* ---------- Focus ---------- */
+:focus-visible { outline: none; }
+button:focus-visible,
+a:focus-visible,
+[role="button"]:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[role="tab"]:focus-visible,
+[role="menuitem"]:focus-visible {
+  box-shadow: 0 0 0 2px #FAF8F5, 0 0 0 4px rgba(255, 90, 54, 0.60);
+  border-radius: inherit;
+}
+
+/* ---------- Safe area helpers ---------- */
+.safe-bottom { padding-bottom: calc(1rem + env(safe-area-inset-bottom, 0px)); }
+.pad-bottom-nav { padding-bottom: calc(96px + env(safe-area-inset-bottom, 0px)); }
+
+@media (min-width: 768px) {
+  .pad-bottom-nav { padding-bottom: 2rem; }
+}
+
+/* ---------- Scrollbar polish ---------- */
+.hide-scrollbar::-webkit-scrollbar { display: none; }
+.hide-scrollbar { scrollbar-width: none; }
+
+/* iOS 16px minimum to prevent input zoom */
+input, select, textarea { font-size: 16px; }
+
+/* ---------- Elegant checkbox ---------- */
+.check {
+  appearance: none;
+  width: 22px;
+  height: 22px;
+  border: 1.5px solid rgba(15, 23, 32, 0.28);
+  border-radius: 6px;
+  background: #FAF8F5;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background-color 160ms ease, border-color 160ms ease;
+  flex-shrink: 0;
+}
+.check:checked {
+  background: #0F1720;
+  border-color: #0F1720;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='%23FAF8F5' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'><path d='M4 10.5 L8.5 15 L16 6'/></svg>");
+  background-size: 14px 14px;
+  background-repeat: no-repeat;
+  background-position: center;
+}
+.check:hover:not(:disabled) { border-color: rgba(15, 23, 32, 0.55); }
+
+/* ---------- Radio ---------- */
+.radio-dot {
+  appearance: none;
+  width: 22px;
+  height: 22px;
+  border: 1.5px solid rgba(15, 23, 32, 0.28);
+  border-radius: 999px;
+  background: #FAF8F5;
+  cursor: pointer;
+  flex-shrink: 0;
+  position: relative;
+  transition: border-color 160ms ease;
+}
+.radio-dot:checked {
+  border-color: #0F1720;
+}
+.radio-dot:checked::after {
+  content: '';
+  position: absolute;
+  inset: 4px;
+  border-radius: 999px;
+  background: #0F1720;
+}
+
+/* ---------- Editorial ornaments ---------- */
+.blob {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(60px);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.rule-thin {
+  height: 1px;
+  background: rgba(15, 23, 32, 0.14);
+  width: 100%;
+}
+
+/* Skeleton shimmer */
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+.skeleton {
+  background: linear-gradient(90deg, rgba(15,23,32,0.05) 0%, rgba(15,23,32,0.10) 50%, rgba(15,23,32,0.05) 100%);
+  background-size: 200% 100%;
+  animation: shimmer 1.6s linear infinite;
+  border-radius: 12px;
+}
+
+/* Toaster: warmer defaults */
+[data-sonner-toaster] {
+  --normal-bg: #FAF8F5;
+  --normal-border: rgba(15, 23, 32, 0.10);
+  --normal-text: #0F1720;
+}
