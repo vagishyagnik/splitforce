@@ -39,7 +39,6 @@ app:
     enabled: ${SEED_ENABLED:true}
     owner-email: vagishyagnik@gmail.com
     owner-name: Vagish Yagnik
-    profile-pics-dir: ${SEED_PROFILE_PICS_DIR:./data/seed-profile-pics}
   storage:
     mode: ${STORAGE_MODE:local}
     local:
