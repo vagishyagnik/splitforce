@@ -9,6 +9,12 @@ export AWS_REGION="$(terraform output -raw blob_bucket >/dev/null && aws configu
 
 (cd $ROOT/backend && mvn -q -DskipTests clean package)
 
+# Seed owner comes from backend/.env.local (SEED_OWNER_EMAIL / SEED_OWNER_NAME).
+env_local() { grep -E "^$1=" $ROOT/backend/.env.local | cut -d= -f2- | tr -d '"'; }
+SEED_OWNER_EMAIL=$(env_local SEED_OWNER_EMAIL)
+SEED_OWNER_NAME=$(env_local SEED_OWNER_NAME)
+export SEED_OWNER_EMAIL SEED_OWNER_NAME
+
 LOG=$(mktemp)
 (
   cd $ROOT/backend

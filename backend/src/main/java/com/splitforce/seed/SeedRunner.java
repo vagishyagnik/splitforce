@@ -73,7 +73,7 @@ public class SeedRunner implements ApplicationRunner {
     private final ExpenseRepository expenses;
     private final CsvExpenseParser parser;
 
-    public SeedRunner(@Value("${app.seed.enabled:true}") boolean enabled,
+    public SeedRunner(@Value("${app.seed.enabled:false}") boolean enabled,
                       @Value("${app.seed.owner-email}") String ownerEmail,
                       @Value("${app.seed.owner-name}") String ownerName,
                       UserRepository users,
@@ -96,6 +96,9 @@ public class SeedRunner implements ApplicationRunner {
         if (!enabled) {
             log.info("Seeding disabled (app.seed.enabled=false)");
             return;
+        }
+        if (ownerEmail == null || ownerEmail.isBlank() || ownerName == null || ownerName.isBlank()) {
+            throw new IllegalStateException("seeding needs SEED_OWNER_EMAIL and SEED_OWNER_NAME");
         }
         User owner = ensureUser(ownerName, ownerEmail, false);
         for (SeedGroup spec : SEED) {

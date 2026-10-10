@@ -3,6 +3,13 @@ resource "random_password" "session_secret" {
   special = false
 }
 
+# CloudFront sends this as X-Origin-Verify; the backend rejects requests without it, so calling
+# the public Function URL directly gets a 403.
+resource "random_password" "origin_secret" {
+  length  = 48
+  special = false
+}
+
 resource "aws_iam_role" "backend" {
   name = "splitforce-backend"
   assume_role_policy = jsonencode({
@@ -86,6 +93,7 @@ resource "aws_lambda_function" "backend" {
       PUBLIC_URL           = var.public_url
       FRONTEND_URL         = var.public_url
       SESSION_SECRET       = random_password.session_secret.result
+      ORIGIN_SECRET        = random_password.origin_secret.result
       COOKIE_SECURE        = "true"
       DYNAMODB_ENDPOINT    = ""
       STORAGE_MODE         = "s3"
@@ -105,8 +113,8 @@ resource "aws_lambda_alias" "live" {
   function_version = aws_lambda_function.backend.version
 }
 
-# Public URL; CloudFront is the only intended caller. (CloudFront OAC for Lambda would require
-# browsers to sign POST bodies, which this app can't do.)
+# Public URL; CloudFront is the only intended caller, enforced by the X-Origin-Verify header.
+# (CloudFront OAC for Lambda would require browsers to sign POST bodies, which this app can't do.)
 resource "aws_lambda_function_url" "live" {
   function_name      = aws_lambda_function.backend.function_name
   qualifier          = aws_lambda_alias.live.name

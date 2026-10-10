@@ -90,6 +90,10 @@ resource "aws_cloudfront_distribution" "site" {
       origin_ssl_protocols   = ["TLSv1.2"]
       origin_read_timeout    = 30
     }
+    custom_header {
+      name  = "X-Origin-Verify"
+      value = random_password.origin_secret.result
+    }
   }
 
   default_cache_behavior {

@@ -5,7 +5,6 @@ import java.io.InputStream;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Set;
 import java.util.UUID;
 
 import org.springframework.core.io.InputStreamResource;
@@ -26,15 +25,13 @@ import org.springframework.web.server.ResponseStatusException;
 
 import com.splitforce.group.GroupMemberRepository;
 import com.splitforce.storage.BlobStore;
+import com.splitforce.storage.ImageTypes;
 import com.splitforce.user.User;
 import com.splitforce.user.UserService;
 
 @RestController
 public class ReceiptController {
 
-    private static final Set<String> ALLOWED_TYPES = Set.of(
-            "image/jpeg", "image/jpg", "image/png", "image/webp", "image/heic", "image/heif"
-    );
     private static final long MAX_BYTES = 4L * 1024 * 1024;
     private static final String PREFIX = "receipts/";
 
@@ -54,15 +51,12 @@ public class ReceiptController {
     public Map<String, Object> upload(@AuthenticationPrincipal OAuth2User principal,
                                       @PathVariable("groupId") String groupId,
                                       @RequestParam("file") MultipartFile file) {
-        User me = userService.resolveOrCreate(principal);
-        boolean iAmMember = groupMembers.listByGroup(groupId).stream()
-                .anyMatch(m -> me.getUserId().equals(m.getUserId()));
-        if (!iAmMember) throw new ResponseStatusException(HttpStatus.FORBIDDEN, "not a member of this group");
+        requireMember(principal, groupId);
 
         if (file == null || file.isEmpty()) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "file required");
         if (file.getSize() > MAX_BYTES) throw new ResponseStatusException(HttpStatus.PAYLOAD_TOO_LARGE, "file too large (max 4MB)");
-        String type = file.getContentType() == null ? "" : file.getContentType().toLowerCase(Locale.ROOT);
-        if (!ALLOWED_TYPES.contains(type)) {
+        String type = ImageTypes.normalize(file.getContentType());
+        if (!ImageTypes.isAllowed(type)) {
             throw new ResponseStatusException(HttpStatus.UNSUPPORTED_MEDIA_TYPE,
                     "unsupported type " + type + " — use jpeg / png / webp / heic");
         }
@@ -79,20 +73,31 @@ public class ReceiptController {
     }
 
     @GetMapping("/receipts/{groupId}/{filename:.+}")
-    public ResponseEntity<Resource> serve(@PathVariable("groupId") String groupId,
+    public ResponseEntity<Resource> serve(@AuthenticationPrincipal OAuth2User principal,
+                                          @PathVariable("groupId") String groupId,
                                           @PathVariable("filename") String filename) throws IOException {
+        requireMember(principal, groupId);
         String key = PREFIX + safeSegment(groupId) + "/" + safeSegment(filename);
         Optional<BlobStore.Blob> blob = store.get(key);
         if (blob.isEmpty()) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "receipt not found");
         BlobStore.Blob b = blob.get();
-        MediaType type = b.contentType() != null
+        MediaType type = ImageTypes.isAllowed(b.contentType())
                 ? MediaType.parseMediaType(b.contentType())
                 : mediaTypeFor(filename);
         ResponseEntity.BodyBuilder res = ResponseEntity.ok()
                 .cacheControl(CacheControl.maxAge(java.time.Duration.ofDays(1)).cachePrivate())
-                .contentType(type);
+                .contentType(type)
+                .header("Content-Security-Policy", ImageTypes.BLOB_CSP);
         if (b.size() >= 0) res.contentLength(b.size());
         return res.body(new InputStreamResource(b.stream()));
+    }
+
+    private void requireMember(OAuth2User principal, String groupId) {
+        if (principal == null) throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "login required");
+        User me = userService.resolveOrCreate(principal);
+        boolean iAmMember = groupMembers.listByGroup(groupId).stream()
+                .anyMatch(m -> me.getUserId().equals(m.getUserId()));
+        if (!iAmMember) throw new ResponseStatusException(HttpStatus.FORBIDDEN, "not a member of this group");
     }
 
     private static String safeSegment(String s) {

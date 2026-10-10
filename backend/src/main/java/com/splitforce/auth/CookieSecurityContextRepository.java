@@ -30,6 +30,9 @@ import jakarta.servlet.http.HttpServletResponse;
  * Stores the logged-in user in a signed cookie instead of an HttpSession. Controllers still
  * receive an {@link OAuth2User} carrying the Google {@code sub}, {@code email}, {@code name}
  * and {@code picture} attributes.
+ *
+ * <p>Sessions expire after {@code app.auth.idle-minutes} without a request ({@link #refresh}
+ * slides the deadline forward), and never outlive {@code app.auth.session-days} since login.
  */
 @Component
 public class CookieSecurityContextRepository implements SecurityContextRepository {
@@ -38,17 +41,23 @@ public class CookieSecurityContextRepository implements SecurityContextRepositor
     private static final List<String> ATTRIBUTES = List.of("sub", "email", "name", "picture");
     private static final List<GrantedAuthority> AUTHORITIES = AuthorityUtils.createAuthorityList("OAUTH2_USER");
     private static final String EXPIRES = "exp";
+    private static final String ISSUED = "iat";
+    /** Don't rewrite the cookie on every request; once a minute is precise enough. */
+    private static final long REFRESH_SLACK_SECONDS = 60;
 
     private final SignedCookies cookies;
     private final ObjectMapper json;
-    private final Duration maxAge;
+    private final Duration idle;
+    private final Duration maxLifetime;
 
     public CookieSecurityContextRepository(SignedCookies cookies,
                                            ObjectMapper json,
+                                           @Value("${app.auth.idle-minutes:60}") long idleMinutes,
                                            @Value("${app.auth.session-days:30}") long sessionDays) {
         this.cookies = cookies;
         this.json = json;
-        this.maxAge = Duration.ofDays(sessionDays);
+        this.idle = Duration.ofMinutes(idleMinutes);
+        this.maxLifetime = Duration.ofDays(sessionDays);
     }
 
     @Override
@@ -59,6 +68,7 @@ public class CookieSecurityContextRepository implements SecurityContextRepositor
         if (claims != null) {
             Map<String, Object> attributes = new HashMap<>(claims);
             attributes.remove(EXPIRES);
+            attributes.remove(ISSUED);
             OAuth2User user = new DefaultOAuth2User(AUTHORITIES, attributes, "email");
             context.setAuthentication(new OAuth2AuthenticationToken(user, AUTHORITIES, "google"));
         }
@@ -79,9 +89,27 @@ public class CookieSecurityContextRepository implements SecurityContextRepositor
             if (value != null) claims.put(name, value.toString());
         }
         if (claims.get("email") == null) return;
-        claims.put(EXPIRES, Instant.now().plus(maxAge).getEpochSecond());
+        write(response, claims, Instant.now().getEpochSecond());
+    }
+
+    /** Slides the idle deadline of a live session cookie forward; no-op when there isn't one. */
+    public void refresh(HttpServletRequest request, HttpServletResponse response) {
+        Map<String, Object> claims = readClaims(request);
+        if (claims == null) return;
+        long now = Instant.now().getEpochSecond();
+        long exp = ((Number) claims.get(EXPIRES)).longValue();
+        if (exp - now > idle.toSeconds() - REFRESH_SLACK_SECONDS) return;
+        write(response, claims, ((Number) claims.get(ISSUED)).longValue());
+    }
+
+    private void write(HttpServletResponse response, Map<String, Object> claims, long issuedAt) {
+        long now = Instant.now().getEpochSecond();
+        long exp = Math.min(now + idle.toSeconds(), issuedAt + maxLifetime.toSeconds());
+        if (exp <= now) return;
+        claims.put(ISSUED, issuedAt);
+        claims.put(EXPIRES, exp);
         try {
-            cookies.write(response, COOKIE, json.writeValueAsBytes(claims), maxAge);
+            cookies.write(response, COOKIE, json.writeValueAsBytes(claims), Duration.ofSeconds(exp - now));
         } catch (IOException e) {
             throw new IllegalStateException("could not write session cookie", e);
         }
@@ -96,8 +124,12 @@ public class CookieSecurityContextRepository implements SecurityContextRepositor
         return cookies.read(request, COOKIE).map(bytes -> {
             try {
                 Map<String, Object> claims = json.readValue(bytes, new TypeReference<Map<String, Object>>() {});
+                long now = Instant.now().getEpochSecond();
                 Object exp = claims.get(EXPIRES);
-                boolean live = exp instanceof Number n && n.longValue() > Instant.now().getEpochSecond();
+                // Cookies without iat predate the idle timeout (they lived 30 days); make those log in again.
+                boolean live = exp instanceof Number n && n.longValue() > now
+                        && n.longValue() <= now + idle.toSeconds()
+                        && claims.get(ISSUED) instanceof Number;
                 return live && claims.get("email") != null ? claims : null;
             } catch (IOException e) {
                 return null;

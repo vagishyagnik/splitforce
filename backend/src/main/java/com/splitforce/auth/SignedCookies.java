@@ -27,6 +27,7 @@ import jakarta.servlet.http.HttpServletResponse;
 public class SignedCookies {
 
     private static final String HMAC = "HmacSHA256";
+    private static final String DEV_SECRET_PREFIX = "local-dev-only";
     private static final Base64.Encoder B64 = Base64.getUrlEncoder().withoutPadding();
     private static final Base64.Decoder B64D = Base64.getUrlDecoder();
 
@@ -38,6 +39,10 @@ public class SignedCookies {
         byte[] bytes = secret.getBytes(StandardCharsets.UTF_8);
         if (bytes.length < 32) {
             throw new IllegalStateException("app.auth.secret must be at least 32 bytes");
+        }
+        // Secure cookies mean a real deployment; the committed dev default would let anyone forge sessions.
+        if (secure && secret.startsWith(DEV_SECRET_PREFIX)) {
+            throw new IllegalStateException("app.auth.secret is the local dev default; set SESSION_SECRET");
         }
         this.key = new SecretKeySpec(bytes, HMAC);
         this.secure = secure;

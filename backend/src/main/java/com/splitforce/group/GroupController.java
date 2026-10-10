@@ -41,6 +41,9 @@ import com.splitforce.user.UserService;
 public class GroupController {
 
     private static final BigDecimal SETTLE_EPSILON = new BigDecimal("0.01");
+    private static final int MAX_MEMBERS_PER_GROUP = 100;
+    private static final int DESCRIPTION_MAX_LEN = 140;
+    private static final int CATEGORY_MAX_LEN = 40;
 
     private final UserService userService;
     private final UserRepository users;
@@ -96,6 +99,9 @@ public class GroupController {
         if (currency.length() != 3) throw badRequest("baseCurrency must be a 3-letter code");
 
         List<MemberInput> memberInputs = req.members == null ? List.of() : req.members;
+        if (memberInputs.size() >= MAX_MEMBERS_PER_GROUP) {
+            throw badRequest("a group can have at most " + MAX_MEMBERS_PER_GROUP + " members");
+        }
 
         String groupId = UUID.randomUUID().toString();
         String now = Instant.now().toString();
@@ -284,6 +290,9 @@ public class GroupController {
 
         Map<String, GroupMember> existing = new HashMap<>();
         for (GroupMember m : groupMembers.listByGroup(groupId)) existing.put(m.getUserId(), m);
+        if (existing.size() + inputs.size() > MAX_MEMBERS_PER_GROUP) {
+            throw badRequest("a group can have at most " + MAX_MEMBERS_PER_GROUP + " members");
+        }
 
         String now = Instant.now().toString();
         List<Map<String, Object>> added = new ArrayList<>();
@@ -370,7 +379,7 @@ public class GroupController {
         List<String> header = new ArrayList<>(List.of(
                 "date", "description", "category", "cost", "currency", "base_cost", "payer"));
         for (GroupMember m : memberships) {
-            header.add(m.getDisplayName() + " (net " + g.getBaseCurrency() + ")");
+            header.add(csvText(m.getDisplayName() + " (net " + g.getBaseCurrency() + ")"));
         }
         csv.append(csvRow(header)).append('\n');
 
@@ -386,12 +395,12 @@ public class GroupController {
                     : nameByUser.getOrDefault(derivePayer(e), "");
             List<String> row = new ArrayList<>(List.of(
                     e.getDate() == null ? "" : e.getDate(),
-                    e.getDescription() == null ? "" : e.getDescription(),
-                    e.getCategory() == null ? "" : e.getCategory(),
+                    csvText(e.getDescription()),
+                    csvText(e.getCategory()),
                     e.getCost() == null ? "" : e.getCost().toPlainString(),
                     e.getCurrency() == null ? "" : e.getCurrency(),
                     baseCost.toPlainString(),
-                    payer
+                    csvText(payer)
             ));
             for (GroupMember m : memberships) {
                 BigDecimal share = e.getShares() == null ? null : e.getShares().get(m.getUserId());
@@ -424,6 +433,15 @@ public class GroupController {
             sb.append(csvCell(cells.get(i)));
         }
         return sb.toString();
+    }
+
+    /**
+     * User-entered text: a leading = + - @ (or tab/CR) would run as a formula in Excel or Sheets,
+     * so it is prefixed with an apostrophe. Numeric cells skip this so negative amounts stay numbers.
+     */
+    private static String csvText(String s) {
+        if (s == null || s.isEmpty()) return "";
+        return "=+-@\t\r".indexOf(s.charAt(0)) >= 0 ? "'" + s : s;
     }
 
     private static String csvCell(String s) {
@@ -557,12 +575,27 @@ public class GroupController {
 
         String category = req.category == null ? null : req.category.trim();
         if (category != null && category.isEmpty()) category = null;
+        if (category != null && category.length() > CATEGORY_MAX_LEN) {
+            throw badRequest("category must be " + CATEGORY_MAX_LEN + " characters or fewer");
+        }
 
-        String date = req.date == null || req.date.trim().isEmpty()
-                ? java.time.LocalDate.now().toString() : req.date.trim();
+        String date;
+        try {
+            date = req.date == null || req.date.trim().isEmpty()
+                    ? java.time.LocalDate.now().toString()
+                    : java.time.LocalDate.parse(req.date.trim()).toString();
+        } catch (java.time.format.DateTimeParseException ex) {
+            throw badRequest("date must be YYYY-MM-DD");
+        }
 
         String description = req.description == null ? "" : req.description.trim();
-        if (description.length() > 140) description = description.substring(0, 140);
+        if (description.length() > DESCRIPTION_MAX_LEN) description = description.substring(0, DESCRIPTION_MAX_LEN);
+
+        String receiptKey = req.receiptKey == null || req.receiptKey.isBlank() ? null : req.receiptKey.trim();
+        // Must be a receipt uploaded to this group (see ReceiptController), not a path into another one.
+        if (receiptKey != null && !receiptKey.matches(java.util.regex.Pattern.quote(groupId) + "/[a-f0-9]{32}\\.[a-z0-9]{1,5}")) {
+            throw badRequest("invalid receiptKey");
+        }
 
         Map<String, BigDecimal> perParticipantOwed = computeOwed(splitMode, req.cost, participants, paidBy);
         Map<String, BigDecimal> shares = new LinkedHashMap<>();
@@ -589,7 +622,7 @@ public class GroupController {
         e.setCreatedByUserId(me.getUserId());
         e.setPaidByUserId(paidBy);
         e.setNotes(notes);
-        e.setReceiptKey(req.receiptKey != null && !req.receiptKey.isBlank() ? req.receiptKey.trim() : null);
+        e.setReceiptKey(receiptKey);
         e.setSplitMode(splitMode);
         expenses.save(e);
 
@@ -682,6 +715,9 @@ public class GroupController {
         boolean changed = false;
         if (req != null && req.category != null) {
             String c = req.category.trim();
+            if (c.length() > CATEGORY_MAX_LEN) {
+                throw badRequest("category must be " + CATEGORY_MAX_LEN + " characters or fewer");
+            }
             if (!c.equals(e.getCategory() == null ? "" : e.getCategory())) {
                 e.setCategory(c.isEmpty() ? null : c);
                 changed = true;
@@ -689,6 +725,7 @@ public class GroupController {
         }
         if (req != null && req.description != null) {
             String d = req.description.trim();
+            if (d.length() > DESCRIPTION_MAX_LEN) d = d.substring(0, DESCRIPTION_MAX_LEN);
             if (!d.equals(e.getDescription() == null ? "" : e.getDescription())) {
                 e.setDescription(d.isEmpty() ? null : d);
                 changed = true;

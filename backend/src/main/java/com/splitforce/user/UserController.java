@@ -23,6 +23,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
 import com.splitforce.storage.BlobStore;
+import com.splitforce.storage.ImageTypes;
 
 @RestController
 public class UserController {
@@ -65,8 +66,8 @@ public class UserController {
         if (principal == null) return ResponseEntity.status(401).build();
         if (file.isEmpty()) return ResponseEntity.badRequest().body(Map.of("error", "empty file"));
         if (file.getSize() > MAX_UPLOAD_BYTES) return ResponseEntity.badRequest().body(Map.of("error", "file too large (4MB max)"));
-        String ct = file.getContentType();
-        if (ct == null || !ct.startsWith("image/")) return ResponseEntity.badRequest().body(Map.of("error", "must be an image"));
+        String ct = ImageTypes.normalize(file.getContentType());
+        if (!ImageTypes.isAllowed(ct)) return ResponseEntity.badRequest().body(Map.of("error", "must be a jpeg, png, webp or heic image"));
 
         User me = userService.resolveOrCreate(principal);
         pictureStore.save(me.getUserId(), file.getInputStream(), file.getSize(), ct);
@@ -80,7 +81,8 @@ public class UserController {
         Optional<BlobStore.Blob> blob = pictureStore.load(userId);
         if (blob.isEmpty()) return ResponseEntity.notFound().build();
         BlobStore.Blob b = blob.get();
-        MediaType type = b.contentType() != null
+        // Anything stored before uploads were restricted (e.g. SVG) is served as an opaque download.
+        MediaType type = ImageTypes.isAllowed(b.contentType())
                 ? MediaType.parseMediaType(b.contentType())
                 : MediaType.APPLICATION_OCTET_STREAM;
         // Versioned URLs (?v=<pictureUpdatedAt>) change on every upload, so they can be cached forever.
@@ -89,7 +91,8 @@ public class UserController {
                 : CacheControl.noCache();
         ResponseEntity.BodyBuilder res = ResponseEntity.ok()
                 .contentType(type)
-                .cacheControl(cache);
+                .cacheControl(cache)
+                .header("Content-Security-Policy", ImageTypes.BLOB_CSP);
         if (b.size() >= 0) res.contentLength(b.size());
         return res.body(new InputStreamResource(b.stream()));
     }

@@ -1,5 +1,9 @@
 import { createContext, useContext, useEffect, useState } from 'react'
-import { apiGet, apiPost } from '../api/client.js'
+import { toast } from 'sonner'
+import { apiGet, apiPost, getLastRequestAt, SESSION_EXPIRED_EVENT } from '../api/client.js'
+
+// A little under the backend's 60-minute idle timeout, so the UI logs out before requests start failing.
+const IDLE_LIMIT_MS = 59 * 60 * 1000
 
 const AuthContext = createContext(null)
 
@@ -23,6 +27,23 @@ export function AuthProvider({ children }) {
       cancelled = true
     }
   }, [])
+
+  useEffect(() => {
+    if (!user) return
+    const expire = () => {
+      apiPost('/api/logout').catch(() => {})
+      setUser(null)
+      toast('Signed out after an hour of inactivity', { id: 'session-expired' })
+    }
+    const timer = setInterval(() => {
+      if (Date.now() - getLastRequestAt() > IDLE_LIMIT_MS) expire()
+    }, 30_000)
+    window.addEventListener(SESSION_EXPIRED_EVENT, expire)
+    return () => {
+      clearInterval(timer)
+      window.removeEventListener(SESSION_EXPIRED_EVENT, expire)
+    }
+  }, [user])
 
   const logout = async () => {
     try {

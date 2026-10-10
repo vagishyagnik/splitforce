@@ -24,10 +24,15 @@ spring:
 
 app:
   frontend-url: ${FRONTEND_URL:http://localhost:7173}
+  # Shared with CloudFront, which sends it as X-Origin-Verify; requests without it are rejected. Empty = off.
+  origin-secret: ${ORIGIN_SECRET:}
   auth:
     # HMAC key for the session + OAuth state cookies. Must be at least 32 bytes; set a random one in AWS.
     secret: ${SESSION_SECRET:local-dev-only-session-secret-0123456789}
     cookie-secure: ${COOKIE_SECURE:false}
+    # Logged out after this long without a request...
+    idle-minutes: 60
+    # ...and after this long since login, however active.
     session-days: 30
   dynamodb:
     endpoint: ${DYNAMODB_ENDPOINT:http://localhost:8000}
@@ -36,9 +41,9 @@ app:
     secret-key: ${AWS_SECRET_ACCESS_KEY:local}
     table-prefix: ${DYNAMODB_TABLE_PREFIX:splitforce_}
   seed:
-    enabled: ${SEED_ENABLED:true}
-    owner-email: vagishyagnik@gmail.com
-    owner-name: Vagish Yagnik
+    enabled: ${SEED_ENABLED:false}
+    owner-email: ${SEED_OWNER_EMAIL:}
+    owner-name: ${SEED_OWNER_NAME:}
   storage:
     mode: ${STORAGE_MODE:local}
     local:

@@ -9,6 +9,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Locale;
+import java.util.Optional;
 import java.util.UUID;
 
 import org.slf4j.Logger;
@@ -19,16 +20,22 @@ import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
+import com.splitforce.storage.ImageTypes;
+
 @Service
 public class UserService {
 
     private static final Logger log = LoggerFactory.getLogger(UserService.class);
 
     private static final long MAX_EXTERNAL_PICTURE_BYTES = 5L * 1024 * 1024;
+    /** Google serves profile pictures from here; nothing else is fetched server-side. */
+    private static final String PICTURE_HOST_SUFFIX = ".googleusercontent.com";
+    private static final int MEMBER_NAME_MAX_LEN = 60;
+    private static final int EMAIL_MAX_LEN = 254;
 
     private static final HttpClient HTTP = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(3))
-            .followRedirects(HttpClient.Redirect.NORMAL)
+            .followRedirects(HttpClient.Redirect.NEVER)
             .build();
 
     private final UserRepository users;
@@ -40,13 +47,17 @@ public class UserService {
     }
 
     public User resolveOrCreate(OAuth2User principal) {
-        String email = principal.getAttribute("email");
+        String rawEmail = principal.getAttribute("email");
         String name = principal.getAttribute("name");
         String picture = principal.getAttribute("picture");
-        if (email == null) {
+        if (rawEmail == null) {
             throw new IllegalStateException("OAuth2 principal has no email attribute");
         }
-        User user = users.findByEmail(email).map(existing -> {
+        // Members added by email are stored lowercased (findOrCreateMember); match them the same way.
+        String email = rawEmail.trim().toLowerCase(Locale.ROOT);
+        Optional<User> found = users.findByEmail(email);
+        if (found.isEmpty() && !email.equals(rawEmail)) found = users.findByEmail(rawEmail);
+        User user = found.map(existing -> {
             boolean changed = false;
             if (existing.isPlaceholder()) { existing.setPlaceholder(false); changed = true; }
             if (isBlank(existing.getName()) && name != null) { existing.setName(name); changed = true; }
@@ -75,7 +86,7 @@ public class UserService {
     private void syncExternalPicture(User user) {
         if (user.getPictureContentType() != null) return;
         String url = user.getPicture();
-        if (url == null || !(url.startsWith("http://") || url.startsWith("https://"))) return;
+        if (!isGooglePictureUrl(url)) return;
 
         try {
             HttpRequest req = HttpRequest.newBuilder(URI.create(url))
@@ -94,7 +105,8 @@ public class UserService {
                 return;
             }
             String contentType = resp.headers().firstValue("content-type")
-                    .filter(ct -> ct.startsWith("image/"))
+                    .map(ImageTypes::normalize)
+                    .filter(ImageTypes::isAllowed)
                     .orElse("image/jpeg");
             pictureStore.save(user.getUserId(), new ByteArrayInputStream(body), body.length, contentType);
             user.setPictureContentType(contentType);
@@ -104,6 +116,17 @@ public class UserService {
             log.info("Persisted external Google picture for {}", user.getEmail());
         } catch (Exception ex) {
             log.warn("External picture sync failed for {}: {}", user.getEmail(), ex.toString());
+        }
+    }
+
+    private static boolean isGooglePictureUrl(String url) {
+        if (url == null) return false;
+        try {
+            URI uri = URI.create(url);
+            return "https".equals(uri.getScheme()) && uri.getHost() != null
+                    && uri.getHost().toLowerCase(Locale.ROOT).endsWith(PICTURE_HOST_SUFFIX);
+        } catch (IllegalArgumentException e) {
+            return false;
         }
     }
 
@@ -129,6 +152,12 @@ public class UserService {
         String cleanEmail = isBlank(email) ? "" : email.trim().toLowerCase(Locale.ROOT);
         if (cleanName.isEmpty() && cleanEmail.isEmpty()) {
             throw new IllegalArgumentException("member requires a name or an email");
+        }
+        if (cleanName.length() > MEMBER_NAME_MAX_LEN) {
+            throw new IllegalArgumentException("member name must be " + MEMBER_NAME_MAX_LEN + " characters or fewer");
+        }
+        if (cleanEmail.length() > EMAIL_MAX_LEN || (!cleanEmail.isEmpty() && !cleanEmail.matches("[^@\\s]+@[^@\\s]+\\.[^@\\s]+"))) {
+            throw new IllegalArgumentException("invalid member email");
         }
         String resolvedEmail = cleanEmail.isEmpty() ? placeholderEmail(cleanName) : cleanEmail;
         String resolvedName = cleanName.isEmpty() ? nameFromEmail(cleanEmail) : cleanName;
