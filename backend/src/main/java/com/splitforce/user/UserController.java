@@ -102,7 +102,7 @@ public class UserController {
         body.put("userId", user.getUserId());
         body.put("email", user.getEmail());
         body.put("name", user.getName());
-        body.put("picture", UserService.resolvePictureUrl(user));
+        body.put("picture", userService.resolvePictureUrl(user));
         return body;
     }
 }

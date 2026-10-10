@@ -14,6 +14,7 @@ import java.util.UUID;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.oauth2.core.user.OAuth2User;
 import org.springframework.stereotype.Service;
 import org.springframework.web.context.request.RequestContextHolder;
@@ -40,10 +41,13 @@ public class UserService {
 
     private final UserRepository users;
     private final ProfilePictureStore pictureStore;
+    private final String publicUrl;
 
-    public UserService(UserRepository users, ProfilePictureStore pictureStore) {
+    public UserService(UserRepository users, ProfilePictureStore pictureStore,
+                       @Value("${app.public-url:}") String publicUrl) {
         this.users = users;
         this.pictureStore = pictureStore;
+        this.publicUrl = publicUrl.endsWith("/") ? publicUrl.substring(0, publicUrl.length() - 1) : publicUrl;
     }
 
     public User resolveOrCreate(OAuth2User principal) {
@@ -195,10 +199,12 @@ public class UserService {
         return out.toString();
     }
 
-    public static String resolvePictureUrl(User user) {
+    public String resolvePictureUrl(User user) {
         if (user == null) return null;
         if (user.getPictureContentType() != null) {
             long v = user.getPictureUpdatedAt() == null ? 0L : user.getPictureUpdatedAt();
+            // In AWS the request host is the Lambda Function URL, which only accepts CloudFront.
+            if (!publicUrl.isEmpty()) return publicUrl + "/pictures/" + user.getUserId() + "?v=" + v;
             if (RequestContextHolder.getRequestAttributes() instanceof ServletRequestAttributes) {
                 return ServletUriComponentsBuilder.fromCurrentContextPath()
                         .path("/pictures/")

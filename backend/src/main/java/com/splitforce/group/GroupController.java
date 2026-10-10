@@ -232,7 +232,7 @@ public class GroupController {
             users.findById(m.getUserId()).ifPresent(u -> {
                 dto.put("email", u.getEmail());
                 dto.put("placeholder", u.isPlaceholder());
-                dto.put("picture", UserService.resolvePictureUrl(u));
+                dto.put("picture", userService.resolvePictureUrl(u));
             });
             memberDtos.add(dto);
         }

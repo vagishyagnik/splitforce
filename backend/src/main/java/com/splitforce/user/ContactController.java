@@ -55,7 +55,7 @@ public class ContactController {
                 dto.put("userId", u.getUserId());
                 dto.put("email", email);
                 dto.put("name", u.getName());
-                dto.put("picture", UserService.resolvePictureUrl(u));
+                dto.put("picture", userService.resolvePictureUrl(u));
                 out.add(dto);
             });
         }

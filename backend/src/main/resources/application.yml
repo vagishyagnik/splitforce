@@ -24,6 +24,8 @@ spring:
 
 app:
   frontend-url: ${FRONTEND_URL:http://localhost:7173}
+  # Public base URL (CloudFront) for absolute links such as profile pictures; empty = request host.
+  public-url: ${PUBLIC_URL:}
   # Shared with CloudFront, which sends it as X-Origin-Verify; requests without it are rejected. Empty = off.
   origin-secret: ${ORIGIN_SECRET:}
   auth:
