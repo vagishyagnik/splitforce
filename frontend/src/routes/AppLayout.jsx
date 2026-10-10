@@ -1,4 +1,4 @@
-import { NavLink, Link, Outlet, useLocation, useNavigate } from 'react-router-dom'
+import { NavLink, Link, Outlet, matchPath, useLocation, useNavigate } from 'react-router-dom'
 import { Plus, User, ListTodo, LogOut } from 'lucide-react'
 import { useAuth } from '../auth/AuthContext.jsx'
 import { BrandLockup, Logo } from '../components/Logo.jsx'
@@ -15,6 +15,8 @@ export default function AppLayout() {
   const isCreate = location.pathname.startsWith('/app/create') || location.pathname.endsWith('/add-expense')
   const isProfile = location.pathname.startsWith('/app/profile')
   const isActivities = !isCreate && !isProfile
+  // On a group page the + adds an expense to that group instead of creating a group.
+  const groupMatch = matchPath('/app/activities/:groupId', location.pathname)
 
   return (
     <div className="min-h-screen bg-cream text-ink">
@@ -25,7 +27,12 @@ export default function AppLayout() {
         <Outlet />
       </main>
       <MobileBottomNav
-        onAdd={() => navigate('/app/create')}
+        onAdd={() =>
+          navigate(groupMatch
+            ? `/app/activities/${groupMatch.params.groupId}/add-expense`
+            : '/app/create')
+        }
+        addLabel={groupMatch ? 'Add expense' : 'Add'}
         active={isCreate ? 'add' : isProfile ? 'profile' : 'activities'}
       />
     </div>
@@ -110,7 +117,7 @@ function MobileTopBar({ user }) {
   )
 }
 
-function MobileBottomNav({ onAdd, active }) {
+function MobileBottomNav({ onAdd, addLabel, active }) {
   return (
     <nav
       aria-label="Primary"
@@ -127,7 +134,7 @@ function MobileBottomNav({ onAdd, active }) {
         <button
           type="button"
           onClick={onAdd}
-          aria-label="Add"
+          aria-label={addLabel}
           data-testid="mobile-nav-add"
           className={cn(
             'relative -mt-6 inline-flex h-14 w-14 items-center justify-center rounded-full bg-coral text-cream shadow-lift transition-transform hover:scale-[1.03] active:scale-[0.98]',

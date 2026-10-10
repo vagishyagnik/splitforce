@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { toast } from 'sonner'
 import {
@@ -12,6 +12,7 @@ import {
   StickyNote,
   X,
   UserPlus,
+  ChevronRight,
 } from 'lucide-react'
 import { useGroup, useSettleUp } from '../api/hooks.js'
 import { Button, IconButton } from '../components/Button.jsx'
@@ -25,10 +26,12 @@ import { EmptyState } from '../components/EmptyState.jsx'
 import { ErrorState } from '../components/ErrorState.jsx'
 import { Skeleton, ExpenseRowSkeleton } from '../components/Skeleton.jsx'
 import { Modal } from '../components/Modal.jsx'
+import { Segmented } from '../components/Segmented.jsx'
 import { CATEGORY_GROUPS, categoryEmoji } from '../util/categories.js'
 import { formatDate, formatMoney, timeAgo } from '../util/format.js'
 import { toCsv, downloadCsv } from '../util/csv.js'
 import { cn } from '../util/cn.js'
+import { useMediaQuery } from '../util/useMediaQuery.js'
 import GroupSettingsPanel from './GroupSettingsPanel.jsx'
 import CategoryBreakdownCard from './CategoryBreakdown.jsx'
 import AddMembersModal from './AddMembersModal.jsx'
@@ -42,6 +45,7 @@ export default function GroupDetail() {
   const [settleTarget, setSettleTarget] = useState(null)
   const [category, setCategory] = useState('')
   const [addMembersOpen, setAddMembersOpen] = useState(false)
+  const isDesktop = useMediaQuery('(min-width: 1024px)')
   const settle = useSettleUp(groupId)
 
   if (isLoading) return <LoadingSkeleton />
@@ -131,28 +135,39 @@ export default function GroupDetail() {
         </div>
       </header>
 
-      <div className="mt-8 grid gap-6 lg:grid-cols-12">
-        <div className="lg:col-span-5 space-y-6">
-          <BalancesCard group={group} onAddMembers={() => setAddMembersOpen(true)} />
-          <SettlementCard
-            group={group}
-            onSettle={(s) => setSettleTarget(s)}
-          />
-          <CategoryBreakdownCard
-            group={group}
-            selected={category}
-            onSelect={setCategory}
-          />
+      {isDesktop ? (
+        <div className="mt-8 grid gap-6 lg:grid-cols-12">
+          <div className="lg:col-span-5 space-y-6">
+            <BalancesCard group={group} onAddMembers={() => setAddMembersOpen(true)} />
+            <SettlementCard
+              group={group}
+              onSettle={(s) => setSettleTarget(s)}
+            />
+            <CategoryBreakdownCard
+              group={group}
+              selected={category}
+              onSelect={setCategory}
+            />
+          </div>
+          <div className="lg:col-span-7">
+            <ExpenseHistoryCard
+              group={group}
+              memberById={memberById}
+              category={category}
+              setCategory={setCategory}
+            />
+          </div>
         </div>
-        <div className="lg:col-span-7">
-          <ExpenseHistoryCard
-            group={group}
-            memberById={memberById}
-            category={category}
-            setCategory={setCategory}
-          />
-        </div>
-      </div>
+      ) : (
+        <MobileGroupBody
+          group={group}
+          memberById={memberById}
+          category={category}
+          setCategory={setCategory}
+          onSettle={(s) => setSettleTarget(s)}
+          onAddMembers={() => setAddMembersOpen(true)}
+        />
+      )}
 
       <AddMembersModal
         open={addMembersOpen}
@@ -219,6 +234,177 @@ export default function GroupDetail() {
         )}
       </Modal>
     </div>
+  )
+}
+
+const TABS = [
+  { value: 'expenses', label: 'Expenses' },
+  { value: 'balances', label: 'Balances' },
+  { value: 'insights', label: 'Insights' },
+]
+
+// Phone layout: the expense list is the home screen, with my own position
+// pinned above it. Balances/settle-up and category insights are one tap away.
+function MobileGroupBody({ group, memberById, category, setCategory, onSettle, onAddMembers }) {
+  const storageKey = `splitforce:group-tab:${group.groupId}`
+  const [tab, setTab] = useState(() => {
+    const saved = localStorage.getItem(storageKey)
+    return TABS.some((t) => t.value === saved) ? saved : 'expenses'
+  })
+  const tabsRef = useRef(null)
+
+  useEffect(() => {
+    localStorage.setItem(storageKey, tab)
+  }, [storageKey, tab])
+
+  const switchTab = (next) => {
+    setTab(next)
+    const el = tabsRef.current
+    if (el && el.getBoundingClientRect().top < 0) el.scrollIntoView({ block: 'start' })
+  }
+
+  // Tapping a category in Insights jumps back to the filtered expense list.
+  const pickCategory = (c) => {
+    setCategory(c)
+    if (c) switchTab('expenses')
+  }
+
+  return (
+    <div className="mt-6">
+      <MyPositionCard
+        group={group}
+        onSettle={onSettle}
+        onSeeAll={() => switchTab('balances')}
+      />
+      <div
+        ref={tabsRef}
+        className="sticky top-14 md:top-[68px] z-20 -mx-4 sm:-mx-6 mt-5 px-4 sm:px-6 py-2 bg-cream/90 backdrop-blur-md scroll-mt-14 md:scroll-mt-[68px]"
+      >
+        <Segmented
+          options={TABS}
+          value={tab}
+          onChange={switchTab}
+          stretch
+          testId="group-mobile-tabs"
+        />
+      </div>
+      {/* Panels stay mounted so search/filter state survives tab switches. */}
+      <div className="mt-4">
+        <div hidden={tab !== 'expenses'}>
+          <ExpenseHistoryCard
+            group={group}
+            memberById={memberById}
+            category={category}
+            setCategory={setCategory}
+          />
+        </div>
+        <div hidden={tab !== 'balances'} className="space-y-6">
+          <BalancesCard group={group} onAddMembers={onAddMembers} />
+          <SettlementCard group={group} onSettle={onSettle} />
+        </div>
+        <div hidden={tab !== 'insights'}>
+          <CategoryBreakdownCard group={group} selected={category} onSelect={pickCategory} />
+        </div>
+      </div>
+    </div>
+  )
+}
+
+const STALE_DAYS = 7
+const MAX_POSITION_ROWS = 3
+
+function daysSince(isoDate) {
+  const t = new Date(isoDate).getTime()
+  return Number.isNaN(t) ? 0 : (Date.now() - t) / 86_400_000
+}
+
+function MyPositionCard({ group, onSettle, onSeeAll }) {
+  const me = group.members.find((m) => m.you)
+  const net = me?.net || 0
+  const square = Math.abs(net) < 0.01
+  const mine = (group.settlement || []).filter(
+    (s) => s.fromUserId === me?.userId || s.toUserId === me?.userId,
+  )
+  const lastExpenseDate = (group.expenses || [])
+    .filter((e) => !e.payment && e.category !== 'Payment' && e.date)
+    .reduce((max, e) => (e.date > max ? e.date : max), '')
+  // Nothing logged for a week but money still owed: likely time to settle.
+  const nudge = mine.length > 0 && lastExpenseDate && daysSince(lastExpenseDate) >= STALE_DAYS
+  const shown = mine.slice(0, MAX_POSITION_ROWS)
+  const hidden = mine.length - shown.length
+
+  return (
+    <Card
+      className="p-5"
+      tone={nudge ? 'coral' : square ? 'mist' : 'paper'}
+      data-testid="my-position-card"
+    >
+      <div className="label-caps">
+        {nudge ? 'All wrapped up?' : 'Your position'}
+      </div>
+      <div className="mt-1.5 flex items-baseline gap-2 flex-wrap">
+        {square ? (
+          <span className="font-editorial text-[26px] leading-tight text-ink">
+            You're all square.
+          </span>
+        ) : (
+          <>
+            <span className="font-editorial text-[26px] leading-tight text-ink">
+              {net > 0 ? "You're owed" : 'You owe'}
+            </span>
+            <Money
+              value={Math.abs(net)}
+              currency={group.baseCurrency}
+              size="lg"
+              tone={net > 0 ? 'positive' : 'negative'}
+            />
+          </>
+        )}
+      </div>
+      {nudge && (
+        <p className="mt-1 text-[13px] text-muted">
+          Nothing new in {Math.floor(daysSince(lastExpenseDate))} days. Settle up while it's fresh.
+        </p>
+      )}
+      {shown.length > 0 && (
+        <ul className="mt-3 space-y-2">
+          {shown.map((s, i) => {
+            const iPay = s.fromUserId === me?.userId
+            const other = iPay ? s.toName : s.fromName
+            return (
+              <li key={i}>
+                <button
+                  type="button"
+                  onClick={() => onSettle(s)}
+                  data-testid={`my-position-settle-${i}`}
+                  className="w-full flex items-center gap-3 rounded-input border border-hairline bg-cream px-3 py-2.5 text-left hover:border-ink/30 transition-colors"
+                >
+                  <Avatar name={other} size="xs" />
+                  <span className="min-w-0 flex-1 truncate text-[14px]">
+                    {iPay ? (
+                      <>You pay <span className="font-medium">{other}</span></>
+                    ) : (
+                      <><span className="font-medium">{other}</span> pays you</>
+                    )}
+                  </span>
+                  <Money value={s.amount} currency={group.baseCurrency} size="sm" />
+                  <span className="text-[12px] font-semibold text-ink underline underline-offset-2">Settle</span>
+                </button>
+              </li>
+            )
+          })}
+        </ul>
+      )}
+      {hidden > 0 && (
+        <button
+          type="button"
+          onClick={onSeeAll}
+          className="mt-2 inline-flex items-center gap-1 text-[13px] font-semibold text-muted hover:text-ink"
+        >
+          {hidden} more <ChevronRight size={14} />
+        </button>
+      )}
+    </Card>
   )
 }
 
@@ -313,10 +499,10 @@ function SettlementCard({ group, onSettle }) {
                 className="w-full rounded-input border border-hairline bg-cream hover:border-ink/30 hover:shadow-soft transition-all p-4 flex items-center gap-3 text-left"
               >
                 <div className="flex items-center gap-2 min-w-0 flex-1">
-                  <Avatar name={s.fromName} size="xs" />
+                  <span className="hidden sm:inline-flex"><Avatar name={s.fromName} size="xs" /></span>
                   <span className="text-[14px] font-medium truncate">{s.fromName}</span>
                   <span className="text-muted text-[12px]">pays</span>
-                  <Avatar name={s.toName} size="xs" />
+                  <span className="hidden sm:inline-flex"><Avatar name={s.toName} size="xs" /></span>
                   <span className="text-[14px] font-medium truncate">{s.toName}</span>
                 </div>
                 <Money value={s.amount} currency={group.baseCurrency} tone="ink" />
