@@ -12,7 +12,7 @@ export default function AppLayout() {
   const location = useLocation()
   const navigate = useNavigate()
 
-  const isCreate = location.pathname.startsWith('/app/create') || location.pathname.endsWith('/add-expense')
+  const isCreate = location.pathname.startsWith('/app/create') || location.pathname.endsWith('/add-expense') || location.pathname.endsWith('/edit')
   const isProfile = location.pathname.startsWith('/app/profile')
   const isActivities = !isCreate && !isProfile
   // On a group page the + adds an expense to that group instead of creating a group.

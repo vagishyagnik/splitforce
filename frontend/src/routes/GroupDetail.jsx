@@ -704,6 +704,7 @@ function ExpenseHistoryCard({ group, memberById, category, setCategory }) {
                 key={e.expenseId}
                 expense={e}
                 paidBy={memberById[e.paidByUserId]}
+                editHref={`/app/activities/${group.groupId}/expenses/${encodeURIComponent(e.expenseId)}/edit`}
               />
             ))}
           </ul>
@@ -713,11 +714,17 @@ function ExpenseHistoryCard({ group, memberById, category, setCategory }) {
   )
 }
 
-function ExpenseRow({ expense, paidBy }) {
+function ExpenseRow({ expense, paidBy, editHref }) {
   const isPayment = Boolean(expense.payment) || expense.category === 'Payment'
   const receiptUrl = expense.receiptKey ? `${API_BASE}/receipts/${expense.receiptKey}` : null
   return (
-    <li className="py-4 flex items-start gap-3 sm:gap-4">
+    <li className="relative py-4 flex items-start gap-3 sm:gap-4 rounded-input hover:bg-ink/[0.02] transition-colors">
+      <Link
+        to={editHref}
+        className="absolute inset-0 rounded-input"
+        aria-label={`Edit ${expense.description || (isPayment ? 'settlement' : 'expense')}`}
+        data-testid={`expense-row-${expense.expenseId}`}
+      />
       <div
         className={cn(
           'shrink-0 h-11 w-11 rounded-full inline-flex items-center justify-center text-[16px]',
@@ -759,7 +766,7 @@ function ExpenseRow({ expense, paidBy }) {
           target="_blank"
           rel="noreferrer"
           aria-label="View receipt"
-          className="hidden sm:inline-flex h-11 w-11 items-center justify-center rounded-input border border-hairline text-muted hover:text-ink hover:border-ink/30 transition-colors"
+          className="relative z-10 hidden sm:inline-flex h-11 w-11 items-center justify-center rounded-input border border-hairline text-muted hover:text-ink hover:border-ink/30 transition-colors"
         >
           <ReceiptIcon size={16} />
         </a>

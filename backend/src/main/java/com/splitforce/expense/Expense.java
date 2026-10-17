@@ -25,6 +25,7 @@ public class Expense {
     private String notes;
     private String receiptKey;
     private String splitMode;
+    private Map<String, BigDecimal> splitValues;
 
     @DynamoDbPartitionKey
     public String getGroupId() { return groupId; }
@@ -72,4 +73,7 @@ public class Expense {
 
     public String getSplitMode() { return splitMode; }
     public void setSplitMode(String splitMode) { this.splitMode = splitMode; }
+
+    public Map<String, BigDecimal> getSplitValues() { return splitValues; }
+    public void setSplitValues(Map<String, BigDecimal> splitValues) { this.splitValues = splitValues; }
 }

@@ -17,7 +17,7 @@ Tagline: *Split expenses. Not friendships.*
 - **Auth**: Google Sign-In via Spring Security OAuth2. Session-cookie auth. Email is the stable user identity.
 - **Groups**: One `Group` entity with a `type` field (`trip` / `home` / `general`). Each group has a base currency and user-set FX rates. Extras (itineraries, bookings, shopping list, chores, story) are optional overlays keyed off the type — NOT separate entities.
 - **Members**: A group has members. Members are `User` rows. Not-yet-registered members are stored as placeholder users (`placeholder=true`, `<slug>@placeholder.splitforce.local` email), upgraded in place when they first sign in with matching Google email. Every member has a **role** (`manager` / `planner` / `general` / `npc`) — see §5.4.
-- **Expenses**: Any split rule (equal, share, exact, percentage). Category tag. Base currency + per-expense currency. Denormalised: each expense stores `Map<memberId, netAmount>` — one query per group gets everything you need to compute balances. **Add/edit UI not built yet** — see §12.
+- **Expenses**: Any split rule (equal, share, exact, percentage). Category tag. Base currency + per-expense currency. Denormalised: each expense stores `Map<memberId, netAmount>` — one query per group gets everything you need to compute balances. Add/edit/delete UI live (`/app/activities/:groupId/add-expense`, `/app/activities/:groupId/expenses/:expenseId/edit`).
 - **Balances**: Derived on read. `balance(member) = sum(net over all expenses in group)`.
 - **Currency + FX rates**: Each group has a `baseCurrency` (already stored) + a user-set `Map<currencyCode, BigDecimal> fxRates` (rate = "1 unit of this currency in baseCurrency units"). Configured per-group by a manager. Missing rate blocks entering an expense in that currency until the user adds it. **Currency picker options come from `Intl.supportedValuesOf('currency')` — the full ISO 4217 list (~180 codes) on any modern browser, with a static fallback for older ones. Labels via `Intl.DisplayNames`.** UI for FX rate config not built yet — see §12.
 - **Group notes**: A free-text notes section on every group, visible to all members, editable by all non-NPC members. One markdown blob per group; last-write-wins. **Not built yet** — see §12.
@@ -172,7 +172,8 @@ Sessions are cookie-based (`JSESSIONID`, `SameSite=Lax`, `HttpOnly`). Frontend c
 | DELETE | `/api/groups/{id}/members/{userId}` | manager | remove member |
 | GET | `/api/groups/{id}/expenses` | member | list expenses (sorted date desc) |
 | POST | `/api/groups/{id}/expenses` | non-npc member | log an expense |
-| PATCH | `/api/groups/{id}/expenses/{expenseId}` | author or manager | edit expense |
+| PUT | `/api/groups/{id}/expenses/{expenseId}` | author or manager | full edit (same body as POST) — **live** (currently any member, roles TBD) |
+| PATCH | `/api/groups/{id}/expenses/{expenseId}` | author or manager | edit description/category only — **live** |
 | DELETE | `/api/groups/{id}/expenses/{expenseId}` | manager | delete expense |
 | GET | `/api/groups/{id}/export` | member | CSV export of group transactions |
 | GET | `/api/activities` | required | see §11 (My Activities feed) |

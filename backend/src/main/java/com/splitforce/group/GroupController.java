@@ -254,6 +254,7 @@ public class GroupController {
             dto.put("notes", e.getNotes());
             dto.put("receiptKey", e.getReceiptKey());
             dto.put("splitMode", e.getSplitMode());
+            dto.put("splitValues", e.getSplitValues());
             expenseDtos.add(dto);
         }
         expenseDtos.sort(Comparator.comparing(
@@ -537,10 +538,65 @@ public class GroupController {
                                                              @RequestBody CreateExpenseRequest req) {
         User me = userService.resolveOrCreate(principal);
         Group g = requireMemberGroup(me, groupId);
-        List<GroupMember> memberships = groupMembers.listByGroup(groupId);
-        Set<String> memberIds = new HashSet<>();
-        for (GroupMember m : memberships) if (m.isActive()) memberIds.add(m.getUserId());
+        Set<String> memberIds = activeMemberIds(groupId);
 
+        Expense e = buildExpense(g, req, memberIds, me.getUserId());
+        e.setExpenseId(newExpenseId(e.getDate()));
+        e.setCreatedAt(Instant.now().toString());
+        e.setCreatedByUserId(me.getUserId());
+        expenses.save(e);
+
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("expenseId", e.getExpenseId());
+        out.put("groupId", groupId);
+        return ResponseEntity.status(HttpStatus.CREATED).body(out);
+    }
+
+    /** Full replace of an expense. Same body and rules as create. */
+    @PutMapping("/{groupId}/expenses/{expenseId}")
+    public Map<String, Object> updateExpense(@AuthenticationPrincipal OAuth2User principal,
+                                             @PathVariable("groupId") String groupId,
+                                             @PathVariable("expenseId") String expenseId,
+                                             @RequestBody CreateExpenseRequest req) {
+        User me = userService.resolveOrCreate(principal);
+        Group g = requireMemberGroup(me, groupId);
+        Expense old = expenses.findById(groupId, expenseId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "expense not found"));
+
+        // People already on the expense stay selectable even if they've since been removed from the group.
+        Set<String> allowedIds = activeMemberIds(groupId);
+        if (old.getShares() != null) allowedIds.addAll(old.getShares().keySet());
+        if (old.getPaidByUserId() != null) allowedIds.add(old.getPaidByUserId());
+
+        Expense e = buildExpense(g, req, allowedIds, me.getUserId());
+        e.setCreatedAt(old.getCreatedAt());
+        e.setCreatedByUserId(old.getCreatedByUserId());
+        e.setPayment(old.isPayment());
+        // The sort key starts with the date, so a date change moves the expense to a new key.
+        boolean rekey = !e.getDate().equals(old.getDate()) || !expenseId.startsWith(e.getDate() + "#");
+        e.setExpenseId(rekey ? newExpenseId(e.getDate()) : expenseId);
+        expenses.save(e);
+        if (rekey) expenses.delete(groupId, expenseId);
+
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("expenseId", e.getExpenseId());
+        out.put("groupId", groupId);
+        return out;
+    }
+
+    private Set<String> activeMemberIds(String groupId) {
+        Set<String> ids = new HashSet<>();
+        for (GroupMember m : groupMembers.listByGroup(groupId)) if (m.isActive()) ids.add(m.getUserId());
+        return ids;
+    }
+
+    private static String newExpenseId(String date) {
+        return date + "#" + UUID.randomUUID().toString().replace("-", "").substring(0, 12);
+    }
+
+    /** Validates a create/update body and builds the expense, minus its id and audit fields. */
+    private static Expense buildExpense(Group g, CreateExpenseRequest req, Set<String> memberIds, String myUserId) {
+        String groupId = g.getGroupId();
         if (req == null) throw badRequest("body required");
         if (req.cost == null || req.cost.signum() <= 0) throw badRequest("cost must be > 0");
         String currency = normalizeCurrency(req.currency);
@@ -548,8 +604,8 @@ public class GroupController {
                 && (g.getFxRates() == null || !g.getFxRates().containsKey(currency))) {
             throw badRequest("currency " + currency + " has no FX rate for this group. Add one in Settings first.");
         }
-        String paidBy = req.paidByUserId == null ? me.getUserId() : req.paidByUserId.trim();
-        if (paidBy.isEmpty()) paidBy = me.getUserId();
+        String paidBy = req.paidByUserId == null ? myUserId : req.paidByUserId.trim();
+        if (paidBy.isEmpty()) paidBy = myUserId;
         if (!memberIds.contains(paidBy)) throw badRequest("payer is not an active member");
 
         String splitMode = req.splitMode == null ? "equal" : req.splitMode.trim().toLowerCase();
@@ -599,18 +655,20 @@ public class GroupController {
 
         Map<String, BigDecimal> perParticipantOwed = computeOwed(splitMode, req.cost, participants, paidBy);
         Map<String, BigDecimal> shares = new LinkedHashMap<>();
-        for (String uid : memberIds) shares.put(uid, BigDecimal.ZERO.setScale(2));
         for (Map.Entry<String, BigDecimal> owed : perParticipantOwed.entrySet()) {
             shares.merge(owed.getKey(), owed.getValue().negate(), BigDecimal::add);
         }
         shares.merge(paidBy, req.cost, BigDecimal::add);
         shares.values().removeIf(v -> v.signum() == 0);
 
+        // Raw split inputs, so an edit can show exactly what was entered (e.g. 33.33% rather than a derived amount).
+        Map<String, BigDecimal> splitValues = new LinkedHashMap<>();
+        for (Participant p : participants) {
+            splitValues.put(p.userId, "equal".equals(splitMode) || p.value == null ? BigDecimal.ZERO : p.value);
+        }
+
         Expense e = new Expense();
         e.setGroupId(groupId);
-        String now = Instant.now().toString();
-        String expenseId = date + "#" + UUID.randomUUID().toString().replace("-", "").substring(0, 12);
-        e.setExpenseId(expenseId);
         e.setDate(date);
         e.setDescription(description.isEmpty() ? null : description);
         e.setCategory(category);
@@ -618,18 +676,12 @@ public class GroupController {
         e.setCurrency(currency);
         e.setPayment(false);
         e.setShares(shares);
-        e.setCreatedAt(now);
-        e.setCreatedByUserId(me.getUserId());
         e.setPaidByUserId(paidBy);
         e.setNotes(notes);
         e.setReceiptKey(receiptKey);
         e.setSplitMode(splitMode);
-        expenses.save(e);
-
-        Map<String, Object> out = new LinkedHashMap<>();
-        out.put("expenseId", e.getExpenseId());
-        out.put("groupId", groupId);
-        return ResponseEntity.status(HttpStatus.CREATED).body(out);
+        e.setSplitValues(splitValues);
+        return e;
     }
 
     private static Map<String, BigDecimal> computeOwed(String mode, BigDecimal cost,

@@ -376,6 +376,20 @@ Rules:
 
 The full expense record and updated balances become available on the next `GET /api/groups/{groupId}`.
 
+### `PUT /api/groups/{groupId}/expenses/{expenseId}`
+Full edit. Same body and validation as `POST` — every field is replaced (omitted `receiptKey` removes the receipt). Caller must be a member. People already on the expense stay valid as payer/participants even if they've since left the group.
+
+`expenseId` contains `#` — URL-encode it (`%23`).
+
+Changing `date` moves the expense to a new key (the id starts with the date), so the response `expenseId` may differ from the one in the path.
+
+**Response 200**
+```json
+{ "expenseId": "2026-08-16#9f8e7d6c5b4a", "groupId": "abc" }
+```
+
+`GET /api/groups/{groupId}` returns `expenses[].splitValues` — the raw per-participant inputs (`percent` or `amount`, `0` for `equal`) for expenses saved since this field was added; `null` for older ones.
+
 ### `PATCH /api/groups/{groupId}/expenses/{expenseId}`
 Partial update. Only `description` and `category` are editable.
 
@@ -398,7 +412,7 @@ Send empty strings to clear a field.
 }
 ```
 
-**Note:** To change amount, split, participants, or payer, delete and recreate. There's no full-edit endpoint yet.
+**Note:** To change amount, split, participants, or payer, use `PUT` above.
 
 ### `DELETE /api/groups/{groupId}/expenses/{expenseId}`
 **Response 204** — no body.

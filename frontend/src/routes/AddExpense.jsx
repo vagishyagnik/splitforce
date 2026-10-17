@@ -1,24 +1,75 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { toast } from 'sonner'
-import { ArrowLeft, Camera, ImagePlus, X, Check, AlertCircle } from 'lucide-react'
-import { useCreateExpense, useGroup, useUploadReceipt } from '../api/hooks.js'
+import { ArrowLeft, Camera, ImagePlus, X, Check, AlertCircle, Trash2, Receipt as ReceiptIcon } from 'lucide-react'
+import {
+  useCreateExpense,
+  useDeleteExpense,
+  useGroup,
+  useUpdateExpense,
+  useUploadReceipt,
+} from '../api/hooks.js'
 import { CATEGORIES, CATEGORY_GROUPS, categoryEmoji } from '../util/categories.js'
 import { Button, IconButton } from '../components/Button.jsx'
 import { Card } from '../components/Card.jsx'
 import { FieldError, Helper, Input, Label, Select, Textarea } from '../components/Field.jsx'
 import { Avatar } from '../components/Avatar.jsx'
 import { Segmented } from '../components/Segmented.jsx'
+import { Modal } from '../components/Modal.jsx'
 import { cn } from '../util/cn.js'
 
 const MAX_RECEIPT_BYTES = 4 * 1024 * 1024
+const API_BASE = import.meta.env.VITE_API_BASE ?? 'http://localhost:9090'
+
+// Rebuilds the split form state from a saved expense.
+function splitFromExpense(expense, members) {
+  const cost = Number(expense.cost || 0)
+  const payer = expense.paidByUserId
+  const parts = {}
+  members.forEach((m) => (parts[m.userId] = { on: false, value: '' }))
+
+  const saved = expense.splitValues
+  if (saved && Object.keys(saved).length > 0) {
+    const mode = expense.splitMode === 'percent' ? 'percent' : expense.splitMode === 'amount' ? 'exact' : 'equal'
+    Object.entries(saved).forEach(([id, v]) => {
+      parts[id] = {
+        on: true,
+        value: mode === 'exact' ? String(Number(v)) : '',
+        percent: mode === 'percent' ? String(Number(v)) : '',
+      }
+    })
+    return { mode, parts, multiPayer: false }
+  }
+
+  // Older expenses only store net (paid − owed) per person; recover what each person owed.
+  const shares = expense.shares || {}
+  const owed = {}
+  new Set([...Object.keys(parts), ...Object.keys(shares)]).forEach((id) => {
+    const o = (id === payer ? cost : 0) - Number(shares[id] || 0)
+    if (o > 0.004) owed[id] = o
+  })
+  const values = Object.values(owed)
+  const equal = values.length > 0 && values.every((v) => Math.abs(v - cost / values.length) <= 0.011)
+  Object.entries(owed).forEach(([id, o]) => {
+    parts[id] = { on: true, value: equal ? '' : o.toFixed(2) }
+  })
+  // Imported Splitwise rows can have several payers; the form only models one.
+  const multiPayer = Object.entries(shares).some(([id, v]) => id !== payer && Number(v) > 0.004)
+  return { mode: equal ? 'equal' : 'exact', parts, multiPayer }
+}
 
 export default function AddExpense() {
-  const { groupId } = useParams()
+  const { groupId, expenseId } = useParams()
+  const isEdit = Boolean(expenseId)
   const navigate = useNavigate()
   const { data: group, isLoading } = useGroup(groupId)
   const createExpense = useCreateExpense(groupId)
+  const updateExpense = useUpdateExpense(groupId)
+  const deleteExpense = useDeleteExpense(groupId)
   const uploadReceipt = useUploadReceipt(groupId)
+  const saveExpense = isEdit ? updateExpense : createExpense
+  const editing = isEdit ? group?.expenses?.find((e) => e.expenseId === expenseId) : null
+  const isPayment = Boolean(editing && (editing.payment || editing.category === 'Payment'))
 
   const currencies = useMemo(() => {
     if (!group) return []
@@ -40,11 +91,32 @@ export default function AddExpense() {
   const [receiptPreview, setReceiptPreview] = useState('')
   const [receiptError, setReceiptError] = useState('')
   const [submitError, setSubmitError] = useState('')
+  const [existingReceiptKey, setExistingReceiptKey] = useState(null)
+  const [multiPayer, setMultiPayer] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState(false)
   const cameraRef = useRef(null)
   const galleryRef = useRef(null)
+  const prefilled = useRef(false)
 
   useEffect(() => {
     if (!group) return
+    if (isEdit) {
+      if (!editing || prefilled.current) return
+      prefilled.current = true
+      const split = splitFromExpense(editing, members)
+      setAmount(String(Number(editing.cost)))
+      setCurrency(editing.currency || group.baseCurrency)
+      setPaidBy(editing.paidByUserId || members.find((m) => m.you)?.userId || '')
+      setSplitMode(split.mode)
+      setParticipants(split.parts)
+      setMultiPayer(split.multiPayer)
+      setDescription(editing.description || '')
+      setCategory(editing.category || 'Other')
+      setDate(editing.date || new Date().toISOString().slice(0, 10))
+      setNotes(editing.notes || '')
+      setExistingReceiptKey(editing.receiptKey || null)
+      return
+    }
     if (!currency) setCurrency(group.baseCurrency)
     if (!paidBy) {
       const me = members.find((m) => m.you) || members[0]
@@ -130,7 +202,7 @@ export default function AddExpense() {
     }
 
     try {
-      let receiptKey
+      let receiptKey = existingReceiptKey || undefined
       if (receiptFile) {
         const up = await uploadReceipt.mutateAsync(receiptFile)
         receiptKey = up.receiptKey
@@ -149,7 +221,8 @@ export default function AddExpense() {
       const wireSplitMode =
         splitMode === 'exact' ? 'amount' : splitMode === 'percent' ? 'percent' : 'equal'
 
-      await createExpense.mutateAsync({
+      await saveExpense.mutateAsync({
+        ...(isEdit && { expenseId }),
         description: description.trim() || category,
         date,
         category,
@@ -161,12 +234,23 @@ export default function AddExpense() {
         participants: partList,
         receiptKey,
       })
-      toast.success('Expense added')
+      toast.success(isEdit ? 'Expense updated' : 'Expense added')
       navigate(`/app/activities/${groupId}`)
     } catch (err) {
       const msg = err?.message || 'Something went wrong'
       setSubmitError(msg)
       toast.error(msg)
+    }
+  }
+
+  const onDelete = async () => {
+    try {
+      await deleteExpense.mutateAsync(expenseId)
+      toast.success(isPayment ? 'Settlement deleted' : 'Expense deleted')
+      navigate(`/app/activities/${groupId}`, { replace: true })
+    } catch (err) {
+      toast.error(err?.message || 'Could not delete')
+      setConfirmDelete(false)
     }
   }
 
@@ -181,6 +265,21 @@ export default function AddExpense() {
 
   const backHref = `/app/activities/${groupId}`
 
+  if (isEdit && !editing) {
+    return (
+      <div className="mx-auto max-w-2xl">
+        <Link to={backHref} className="inline-flex items-center gap-1.5 text-muted hover:text-ink text-[14px]">
+          <ArrowLeft size={16} /> Back to {group.name}
+        </Link>
+        <p className="mt-6 text-[15px] text-muted">This expense no longer exists.</p>
+      </div>
+    )
+  }
+
+  const saving = saveExpense.isPending || uploadReceipt.isPending
+  const savingLabel = isEdit ? 'Saving…' : 'Adding…'
+  const submitLabel = isEdit ? 'Save changes' : 'Add expense'
+
   return (
     <form onSubmit={onSubmit} className="mx-auto max-w-2xl animate-fade-up pb-32 md:pb-8">
       <Link
@@ -191,9 +290,19 @@ export default function AddExpense() {
       </Link>
 
       <header className="mt-4">
-        <div className="label-caps">New expense</div>
+        <div className="label-caps">
+          {isEdit ? (isPayment ? 'Edit settlement' : 'Edit expense') : 'New expense'}
+        </div>
         <h1 className="mt-3 font-editorial text-[40px] sm:text-[52px] leading-[1.02]">
-          Log the <span className="italic">moment.</span>
+          {isEdit ? (
+            <>
+              Fix the <span className="italic">details.</span>
+            </>
+          ) : (
+            <>
+              Log the <span className="italic">moment.</span>
+            </>
+          )}
         </h1>
       </header>
 
@@ -270,6 +379,13 @@ export default function AddExpense() {
               </div>
             )}
           </div>
+
+          {multiPayer && (
+            <div className="mt-4 flex items-start gap-2 rounded-input bg-coral-pale px-3 py-2 text-[13px] text-negative">
+              <AlertCircle size={14} className="mt-0.5 shrink-0" />
+              <span>This imported expense had more than one payer. Saving it records a single payer.</span>
+            </div>
+          )}
 
           <div className="mt-4 hairline-t pt-4 divide-y divide-hairline">
             {members.map((m) => {
@@ -415,56 +531,58 @@ export default function AddExpense() {
               data-testid="expense-date-input"
             />
           </div>
-          <div>
-            <Label>Category</Label>
-            <div className="mt-3 space-y-4">
-              {CATEGORY_GROUPS.map((group) => (
-                <div key={group.key}>
+          {!isPayment && (
+            <div>
+              <Label>Category</Label>
+              <div className="mt-3 space-y-4">
+                {CATEGORY_GROUPS.map((group) => (
+                  <div key={group.key}>
+                    <div className="text-[11px] uppercase tracking-[0.14em] text-ink/60 mb-2">
+                      {group.label}
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {group.items.map((c) => (
+                        <button
+                          type="button"
+                          key={c.key}
+                          onClick={() => setCategory(c.key)}
+                          className={cn(
+                            'inline-flex items-center gap-1.5 h-10 rounded-full px-3.5 text-[13px] font-medium transition-colors border',
+                            category === c.key
+                              ? 'bg-ink text-cream border-ink'
+                              : 'bg-cream text-ink border-hairline hover:border-ink/40',
+                          )}
+                          data-testid={`expense-category-${c.key}`}
+                        >
+                          <span>{c.emoji}</span> {c.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+                <div>
                   <div className="text-[11px] uppercase tracking-[0.14em] text-ink/60 mb-2">
-                    {group.label}
+                    Other
                   </div>
                   <div className="flex flex-wrap gap-2">
-                    {group.items.map((c) => (
-                      <button
-                        type="button"
-                        key={c.key}
-                        onClick={() => setCategory(c.key)}
-                        className={cn(
-                          'inline-flex items-center gap-1.5 h-10 rounded-full px-3.5 text-[13px] font-medium transition-colors border',
-                          category === c.key
-                            ? 'bg-ink text-cream border-ink'
-                            : 'bg-cream text-ink border-hairline hover:border-ink/40',
-                        )}
-                        data-testid={`expense-category-${c.key}`}
-                      >
-                        <span>{c.emoji}</span> {c.label}
-                      </button>
-                    ))}
+                    <button
+                      type="button"
+                      onClick={() => setCategory('Other')}
+                      className={cn(
+                        'inline-flex items-center gap-1.5 h-10 rounded-full px-3.5 text-[13px] font-medium transition-colors border',
+                        category === 'Other'
+                          ? 'bg-ink text-cream border-ink'
+                          : 'bg-cream text-ink border-hairline hover:border-ink/40',
+                      )}
+                      data-testid="expense-category-Other"
+                    >
+                      <span>✎</span> Other
+                    </button>
                   </div>
-                </div>
-              ))}
-              <div>
-                <div className="text-[11px] uppercase tracking-[0.14em] text-ink/60 mb-2">
-                  Other
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setCategory('Other')}
-                    className={cn(
-                      'inline-flex items-center gap-1.5 h-10 rounded-full px-3.5 text-[13px] font-medium transition-colors border',
-                      category === 'Other'
-                        ? 'bg-ink text-cream border-ink'
-                        : 'bg-cream text-ink border-hairline hover:border-ink/40',
-                    )}
-                    data-testid="expense-category-Other"
-                  >
-                    <span>✎</span> Other
-                  </button>
                 </div>
               </div>
             </div>
-          </div>
+          )}
           <div>
             <Label htmlFor="notes" hint={`${notes.length}/1000`}>
               Notes
@@ -504,7 +622,30 @@ export default function AddExpense() {
             data-testid="receipt-gallery-input"
             id="receipt-gallery-input"
           />
-          {receiptFile ? (
+          {!receiptFile && existingReceiptKey ? (
+            <div className="flex items-center gap-4" data-testid="receipt-existing">
+              <a
+                href={`${API_BASE}/receipts/${existingReceiptKey}`}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex h-24 w-24 shrink-0 items-center justify-center rounded-input border border-hairline bg-mist text-muted hover:text-ink"
+                aria-label="View current receipt"
+              >
+                <ReceiptIcon size={22} />
+              </a>
+              <div className="flex-1 min-w-0">
+                <div className="text-[14px] font-medium">Receipt attached</div>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <Button as="label" htmlFor="receipt-gallery-input" variant="outline" size="sm">
+                    <ImagePlus size={14} /> Replace
+                  </Button>
+                  <Button variant="ghost" size="sm" onClick={() => setExistingReceiptKey(null)} type="button">
+                    <X size={14} /> Remove
+                  </Button>
+                </div>
+              </div>
+            </div>
+          ) : receiptFile ? (
             <div className="flex items-center gap-4" data-testid="receipt-preview">
               <img
                 src={receiptPreview}
@@ -578,10 +719,10 @@ export default function AddExpense() {
             type="submit"
             variant="primary"
             className="flex-1"
-            disabled={createExpense.isPending || uploadReceipt.isPending}
+            disabled={saving}
             data-testid="expense-submit-button"
           >
-            {createExpense.isPending || uploadReceipt.isPending ? 'Adding…' : 'Add expense'}
+            {saving ? savingLabel : submitLabel}
           </Button>
         </div>
       </div>
@@ -591,14 +732,50 @@ export default function AddExpense() {
         <Button as={Link} to={backHref} variant="ghost">
           Cancel
         </Button>
-        <Button
-          type="submit"
-          variant="primary"
-          disabled={createExpense.isPending || uploadReceipt.isPending}
-        >
-          {createExpense.isPending || uploadReceipt.isPending ? 'Adding…' : 'Add expense'}
+        <Button type="submit" variant="primary" disabled={saving}>
+          {saving ? savingLabel : submitLabel}
         </Button>
       </div>
+
+      {isEdit && (
+        <div className="mt-10 hairline-t pt-6">
+          <Button
+            type="button"
+            variant="danger"
+            onClick={() => setConfirmDelete(true)}
+            data-testid="expense-delete-button"
+          >
+            <Trash2 size={15} /> {isPayment ? 'Delete settlement' : 'Delete expense'}
+          </Button>
+        </div>
+      )}
+
+      <Modal
+        open={confirmDelete}
+        onClose={deleteExpense.isPending ? undefined : () => setConfirmDelete(false)}
+        title={isPayment ? 'Delete this settlement?' : 'Delete this expense?'}
+        testId="delete-expense-modal"
+        footer={
+          <div className="flex flex-col-reverse sm:flex-row sm:items-center sm:justify-end gap-2 pt-2">
+            <Button variant="ghost" onClick={() => setConfirmDelete(false)} disabled={deleteExpense.isPending}>
+              Cancel
+            </Button>
+            <Button
+              variant="danger"
+              onClick={onDelete}
+              disabled={deleteExpense.isPending}
+              data-testid="delete-expense-confirm"
+            >
+              {deleteExpense.isPending ? 'Deleting…' : 'Delete'}
+            </Button>
+          </div>
+        }
+      >
+        <p className="text-[14.5px] text-muted">
+          {editing?.description || 'This expense'} will be removed and everyone's balances recalculated.
+          This can't be undone.
+        </p>
+      </Modal>
     </form>
   )
 }

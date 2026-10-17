@@ -163,10 +163,22 @@ export function useCreateExpense(groupId) {
   })
 }
 
+export function useUpdateExpense(groupId) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ expenseId, ...body }) =>
+      apiPut(`/api/groups/${groupId}/expenses/${encodeURIComponent(expenseId)}`, body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: qk.group(groupId) })
+      qc.invalidateQueries({ queryKey: qk.activities })
+    },
+  })
+}
+
 export function useDeleteExpense(groupId) {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (expenseId) => apiDelete(`/api/groups/${groupId}/expenses/${expenseId}`),
+    mutationFn: (expenseId) => apiDelete(`/api/groups/${groupId}/expenses/${encodeURIComponent(expenseId)}`),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: qk.group(groupId) })
       qc.invalidateQueries({ queryKey: qk.activities })

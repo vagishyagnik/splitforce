@@ -28,6 +28,7 @@ export default function App() {
           <Route path="activities" element={<Activities />} />
           <Route path="activities/:groupId" element={<GroupDetail />} />
           <Route path="activities/:groupId/add-expense" element={<AddExpense />} />
+          <Route path="activities/:groupId/expenses/:expenseId/edit" element={<AddExpense />} />
           <Route path="activities/:groupId/notes" element={<Notes />} />
           <Route path="create" element={<Create />} />
           <Route path="profile" element={<Profile />} />
