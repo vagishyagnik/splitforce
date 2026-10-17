@@ -290,6 +290,18 @@ export default function AddExpense() {
       </Link>
 
       <header className="mt-4">
+        {isEdit && (
+          <Button
+            type="button"
+            variant="danger"
+            size="sm"
+            onClick={() => setConfirmDelete(true)}
+            className="float-right"
+            data-testid="expense-delete-button"
+          >
+            <Trash2 size={15} /> Delete
+          </Button>
+        )}
         <div className="label-caps">
           {isEdit ? (isPayment ? 'Edit settlement' : 'Edit expense') : 'New expense'}
         </div>
@@ -736,19 +748,6 @@ export default function AddExpense() {
           {saving ? savingLabel : submitLabel}
         </Button>
       </div>
-
-      {isEdit && (
-        <div className="mt-10 hairline-t pt-6">
-          <Button
-            type="button"
-            variant="danger"
-            onClick={() => setConfirmDelete(true)}
-            data-testid="expense-delete-button"
-          >
-            <Trash2 size={15} /> {isPayment ? 'Delete settlement' : 'Delete expense'}
-          </Button>
-        </div>
-      )}
 
       <Modal
         open={confirmDelete}

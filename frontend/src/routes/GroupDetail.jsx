@@ -13,8 +13,10 @@ import {
   X,
   UserPlus,
   ChevronRight,
+  Pencil,
+  Trash2,
 } from 'lucide-react'
-import { useGroup, useSettleUp } from '../api/hooks.js'
+import { useDeleteExpense, useGroup, useSettleUp } from '../api/hooks.js'
 import { Button, IconButton } from '../components/Button.jsx'
 import { Card, CardHeader } from '../components/Card.jsx'
 import { Pill } from '../components/Pill.jsx'
@@ -520,6 +522,19 @@ function ExpenseHistoryCard({ group, memberById, category, setCategory }) {
   const [showFilters, setShowFilters] = useState(false)
   const [from, setFrom] = useState('')
   const [to, setTo] = useState('')
+  const [deleteTarget, setDeleteTarget] = useState(null)
+  const deleteExpense = useDeleteExpense(group.groupId)
+
+  const confirmDelete = async () => {
+    const isPayment = deleteTarget.payment || deleteTarget.category === 'Payment'
+    try {
+      await deleteExpense.mutateAsync(deleteTarget.expenseId)
+      toast.success(isPayment ? 'Settlement deleted' : 'Expense deleted')
+      setDeleteTarget(null)
+    } catch (err) {
+      toast.error(err?.message || 'Could not delete')
+    }
+  }
 
   const filtered = useMemo(() => {
     return (group.expenses || []).filter((e) => {
@@ -705,16 +720,47 @@ function ExpenseHistoryCard({ group, memberById, category, setCategory }) {
                 expense={e}
                 paidBy={memberById[e.paidByUserId]}
                 editHref={`/app/activities/${group.groupId}/expenses/${encodeURIComponent(e.expenseId)}/edit`}
+                onDelete={() => setDeleteTarget(e)}
               />
             ))}
           </ul>
         )}
       </div>
+
+      <Modal
+        open={Boolean(deleteTarget)}
+        onClose={deleteExpense.isPending ? undefined : () => setDeleteTarget(null)}
+        title="Delete this expense?"
+        testId="delete-expense-modal"
+        footer={
+          <div className="flex flex-col-reverse sm:flex-row sm:items-center sm:justify-end gap-2 pt-2">
+            <Button variant="ghost" onClick={() => setDeleteTarget(null)} disabled={deleteExpense.isPending}>
+              Cancel
+            </Button>
+            <Button
+              variant="danger"
+              onClick={confirmDelete}
+              disabled={deleteExpense.isPending}
+              data-testid="delete-expense-confirm"
+            >
+              {deleteExpense.isPending ? 'Deleting…' : 'Delete'}
+            </Button>
+          </div>
+        }
+      >
+        {deleteTarget && (
+          <p className="text-[14.5px] text-muted">
+            <span className="font-medium text-ink">{deleteTarget.description || 'This expense'}</span>
+            {' '}({formatMoney(deleteTarget.cost, deleteTarget.currency)}) will be removed and everyone's
+            balances recalculated. This can't be undone.
+          </p>
+        )}
+      </Modal>
     </Card>
   )
 }
 
-function ExpenseRow({ expense, paidBy, editHref }) {
+function ExpenseRow({ expense, paidBy, editHref, onDelete }) {
   const isPayment = Boolean(expense.payment) || expense.category === 'Payment'
   const receiptUrl = expense.receiptKey ? `${API_BASE}/receipts/${expense.receiptKey}` : null
   return (
@@ -774,6 +820,26 @@ function ExpenseRow({ expense, paidBy, editHref }) {
       <div className="text-right shrink-0">
         <Money value={expense.cost} currency={expense.currency} />
         <div className="label-caps mt-0.5 !tracking-[0.1em]">{expense.currency}</div>
+      </div>
+      <div className="relative z-10 shrink-0 flex items-center gap-0.5 -mr-2">
+        <IconButton
+          as={Link}
+          to={editHref}
+          label="Edit expense"
+          className="h-9 w-9 text-muted hover:text-ink"
+          data-testid={`expense-edit-${expense.expenseId}`}
+        >
+          <Pencil size={15} />
+        </IconButton>
+        <IconButton
+          type="button"
+          onClick={onDelete}
+          label="Delete expense"
+          className="h-9 w-9 text-muted hover:text-negative hover:bg-negative/10"
+          data-testid={`expense-delete-${expense.expenseId}`}
+        >
+          <Trash2 size={15} />
+        </IconButton>
       </div>
     </li>
   )
