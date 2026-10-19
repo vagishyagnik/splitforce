@@ -522,6 +522,7 @@ function ExpenseHistoryCard({ group, memberById, category, setCategory }) {
   const [showFilters, setShowFilters] = useState(false)
   const [from, setFrom] = useState('')
   const [to, setTo] = useState('')
+  const [person, setPerson] = useState('')
   const [deleteTarget, setDeleteTarget] = useState(null)
   const deleteExpense = useDeleteExpense(group.groupId)
 
@@ -548,16 +549,19 @@ function ExpenseHistoryCard({ group, memberById, category, setCategory }) {
         if (!matches) return false
       }
       if (category && e.category !== category) return false
+      // A person is "in" an expense if they paid for it or owe a share of it.
+      if (person && e.paidByUserId !== person && !(Number(e.shares?.[person]) > 0)) return false
       if (from && e.date < from) return false
       if (to && e.date > to) return false
       return true
     })
-  }, [group.expenses, q, category, from, to, memberById])
+  }, [group.expenses, q, category, person, from, to, memberById])
 
-  const activeFilterCount = [category, from, to].filter(Boolean).length
+  const activeFilterCount = [category, person, from, to].filter(Boolean).length
 
   const clearFilters = () => {
     setCategory('')
+    setPerson('')
     setFrom('')
     setTo('')
   }
@@ -637,7 +641,7 @@ function ExpenseHistoryCard({ group, memberById, category, setCategory }) {
 
       {showFilters && (
         <div className="mt-4 rounded-card border border-hairline bg-mist/50 p-4">
-          <div className="grid gap-3 sm:grid-cols-3">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <div>
               <div className="label-caps mb-1.5">Category</div>
               <Select
@@ -656,6 +660,21 @@ function ExpenseHistoryCard({ group, memberById, category, setCategory }) {
                   </optgroup>
                 ))}
                 <option value="Other">✎  Other</option>
+              </Select>
+            </div>
+            <div>
+              <div className="label-caps mb-1.5">Person</div>
+              <Select
+                value={person}
+                onChange={(e) => setPerson(e.target.value)}
+                data-testid="filter-person"
+              >
+                <option value="">Everyone</option>
+                {group.members.map((m) => (
+                  <option key={m.userId} value={m.userId}>
+                    {m.you ? `${m.displayName} (you)` : m.displayName}
+                  </option>
+                ))}
               </Select>
             </div>
             <div>
