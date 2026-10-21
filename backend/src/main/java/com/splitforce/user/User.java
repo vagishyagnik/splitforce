@@ -1,5 +1,9 @@
 package com.splitforce.user;
 
+import java.util.List;
+
+import com.splitforce.token.ApiToken;
+
 import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbBean;
 import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbPartitionKey;
 import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbSecondaryPartitionKey;
@@ -16,6 +20,7 @@ public class User {
     private Long pictureUpdatedAt;
     private boolean placeholder;
     private String createdAt;
+    private List<ApiToken> apiTokens;
 
     @DynamoDbPartitionKey
     public String getUserId() { return userId; }
@@ -42,4 +47,7 @@ public class User {
 
     public String getCreatedAt() { return createdAt; }
     public void setCreatedAt(String createdAt) { this.createdAt = createdAt; }
+
+    public List<ApiToken> getApiTokens() { return apiTokens; }
+    public void setApiTokens(List<ApiToken> apiTokens) { this.apiTokens = apiTokens; }
 }

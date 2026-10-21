@@ -7,6 +7,7 @@ export const qk = {
   groups: ['groups'],
   group: (id) => ['groups', id],
   contacts: ['me', 'contacts'],
+  apiTokens: ['me', 'tokens'],
 }
 
 // ---------- Me ----------
@@ -45,6 +46,30 @@ export function useUploadMyPicture() {
       qc.invalidateQueries({ queryKey: qk.me })
       qc.invalidateQueries({ queryKey: qk.activities })
     },
+  })
+}
+
+// ---------- API tokens (for the MCP server) ----------
+export function useApiTokens() {
+  return useQuery({
+    queryKey: qk.apiTokens,
+    queryFn: () => apiGet('/api/me/tokens'),
+  })
+}
+
+export function useCreateApiToken() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (body) => apiPost('/api/me/tokens', body),
+    onSuccess: () => qc.invalidateQueries({ queryKey: qk.apiTokens }),
+  })
+}
+
+export function useRevokeApiToken() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (id) => apiDelete(`/api/me/tokens/${encodeURIComponent(id)}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: qk.apiTokens }),
   })
 }
 

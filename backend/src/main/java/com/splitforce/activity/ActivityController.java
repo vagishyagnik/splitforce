@@ -1,6 +1,7 @@
 package com.splitforce.activity;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -61,7 +62,7 @@ public class ActivityController {
             String lastActivityAt = null;
             for (Expense e : groupExpenses) {
                 BigDecimal share = e.getShares() == null ? null : e.getShares().get(me.getUserId());
-                if (share != null) myNet = myNet.add(share);
+                if (share != null) myNet = myNet.add(share.multiply(rateToBase(g, e.getCurrency())));
                 if (e.getDate() != null && (lastActivityAt == null || e.getDate().compareTo(lastActivityAt) > 0)) {
                     lastActivityAt = e.getDate();
                 }
@@ -75,7 +76,7 @@ public class ActivityController {
             row.put("memberCount", memberCount);
             row.put("expenseCount", groupExpenses.size());
             row.put("lastActivityAt", lastActivityAt);
-            row.put("myNet", myNet);
+            row.put("myNet", myNet.setScale(2, RoundingMode.HALF_UP));
             out.add(row);
         }
 
@@ -83,5 +84,12 @@ public class ActivityController {
                 (Map<String, Object> r) -> (String) r.get("lastActivityAt"),
                 Comparator.nullsLast(Comparator.reverseOrder())));
         return out;
+    }
+
+    /** Same conversion as the group page: a missing rate counts 1:1. */
+    private static BigDecimal rateToBase(Group g, String currency) {
+        if (currency == null || currency.isBlank() || currency.equalsIgnoreCase(g.getBaseCurrency())) return BigDecimal.ONE;
+        BigDecimal r = g.getFxRates() == null ? null : g.getFxRates().get(currency.toUpperCase());
+        return r == null ? BigDecimal.ONE : r;
     }
 }

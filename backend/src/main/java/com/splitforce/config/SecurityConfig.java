@@ -17,6 +17,7 @@ import org.springframework.security.oauth2.core.OAuth2Error;
 import org.springframework.security.oauth2.core.oidc.user.OidcUser;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.access.intercept.AuthorizationFilter;
+import org.springframework.security.web.authentication.AnonymousAuthenticationFilter;
 import org.springframework.security.web.authentication.HttpStatusEntryPoint;
 import org.springframework.security.web.savedrequest.NullRequestCache;
 import org.springframework.security.web.util.matcher.AntPathRequestMatcher;
@@ -27,6 +28,8 @@ import org.springframework.web.filter.OncePerRequestFilter;
 
 import com.splitforce.auth.CookieAuthorizationRequestRepository;
 import com.splitforce.auth.CookieSecurityContextRepository;
+import com.splitforce.token.ApiTokenAuthenticationFilter;
+import com.splitforce.token.ApiTokenService;
 
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -43,6 +46,7 @@ public class SecurityConfig {
     SecurityFilterChain securityFilterChain(HttpSecurity http,
                                             CookieSecurityContextRepository sessionCookies,
                                             CookieAuthorizationRequestRepository authRequestCookies,
+                                            ApiTokenService apiTokens,
                                             @Value("${app.auth.cookie-secure:false}") boolean secure,
                                             @Value("${spring.security.oauth2.client.registration.google.client-id}") String clientId,
                                             @Value("${spring.security.oauth2.client.registration.google.client-secret}") String clientSecret)
@@ -77,6 +81,8 @@ public class SecurityConfig {
                 .logoutSuccessHandler((request, response, authentication) ->
                     response.setStatus(HttpStatus.NO_CONTENT.value()))
             )
+            // Bearer tokens (MCP and other API clients) override whatever the cookie loaded.
+            .addFilterBefore(new ApiTokenAuthenticationFilter(apiTokens), AnonymousAuthenticationFilter.class)
             // After authorization, so logout and the OAuth callback (which return earlier) aren't affected.
             .addFilterAfter(new OncePerRequestFilter() {
                 @Override

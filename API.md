@@ -23,6 +23,16 @@ Auth is not a JSON endpoint — it's a redirect flow.
 | Failure redirect | 302 | `${FRONTEND_URL}/?login=failed` |
 | Log out | `POST` | `/api/logout` → `204 No Content` |
 
+**API tokens:** non-browser clients (the MCP server in `mcp/`) send `Authorization: Bearer sf_...` instead of the cookie. A bearer header that doesn't verify (malformed, unknown, revoked, expired) is a `401` on any path, with no fallback to the cookie.
+
+| Purpose | Method | URL |
+|---|---|---|
+| List your tokens (unexpired) | `GET` | `/api/me/tokens` → `[{ id, name, hint, createdAt, expiresAt, lastUsedAt }]` |
+| Create a token | `POST` | `/api/me/tokens` with `{ "name": "Claude MCP", "expiresInDays": 90 }` (`expiresInDays` 1–365 or `null` for none) → `201`, same shape plus `token` (shown only here) |
+| Revoke a token | `DELETE` | `/api/me/tokens/{id}` → `204` |
+
+Token management requires the browser session; calling these with a bearer token is a `403`. At most 10 tokens per user.
+
 Any `/api/**` request without a valid session returns **`401 Unauthorized`** with an empty body. Use `GET /api/me` on app load to check auth state.
 
 **Public (no auth required):** `/`, `/api/health`, `/error`, `/pictures/**`, `/receipts/**` (but receipts respect group membership implicitly — no one guesses random UUID filenames).

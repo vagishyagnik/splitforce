@@ -12,6 +12,7 @@ import { GroupTypeTag } from '../components/GroupTypeTag.jsx'
 import { Pill } from '../components/Pill.jsx'
 import { Skeleton } from '../components/Skeleton.jsx'
 import { EmptyState } from '../components/EmptyState.jsx'
+import ApiTokensCard from './ApiTokensCard.jsx'
 
 const MAX_PICTURE_BYTES = 4 * 1024 * 1024
 
@@ -222,6 +223,8 @@ export default function Profile() {
           )}
         </div>
       </section>
+
+      <ApiTokensCard />
 
       <div className="mt-10">
         <Button
