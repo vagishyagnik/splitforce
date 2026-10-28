@@ -44,6 +44,8 @@ public class GroupController {
     private static final int MAX_MEMBERS_PER_GROUP = 100;
     private static final int DESCRIPTION_MAX_LEN = 140;
     private static final int CATEGORY_MAX_LEN = 40;
+    private static final String PAYMENT_CATEGORY = "Payment";
+    private static final java.time.Duration DUPLICATE_PAYMENT_WINDOW = java.time.Duration.ofMinutes(10);
 
     private final UserService userService;
     private final UserRepository users;
@@ -541,6 +543,7 @@ public class GroupController {
         Set<String> memberIds = activeMemberIds(groupId);
 
         Expense e = buildExpense(g, req, memberIds, me.getUserId());
+        rejectDuplicatePayment(e, expenses.listByGroup(groupId));
         e.setExpenseId(newExpenseId(e.getDate()));
         e.setCreatedAt(Instant.now().toString());
         e.setCreatedByUserId(me.getUserId());
@@ -550,6 +553,31 @@ public class GroupController {
         out.put("expenseId", e.getExpenseId());
         out.put("groupId", groupId);
         return ResponseEntity.status(HttpStatus.CREATED).body(out);
+    }
+
+    /**
+     * Settle-up entries are easy to record twice (both sides tap Settle before seeing the other's), which
+     * flips the balance the other way. Refuse a payment identical to one logged moments ago.
+     */
+    private static void rejectDuplicatePayment(Expense e, List<Expense> existing) {
+        if (!PAYMENT_CATEGORY.equalsIgnoreCase(e.getCategory())) return;
+        Instant cutoff = Instant.now().minus(DUPLICATE_PAYMENT_WINDOW);
+        for (Expense o : existing) {
+            if (!PAYMENT_CATEGORY.equalsIgnoreCase(o.getCategory()) || o.getCreatedAt() == null) continue;
+            if (Instant.parse(o.getCreatedAt()).isBefore(cutoff)) continue;
+            if (e.getPaidByUserId().equals(o.getPaidByUserId())
+                    && e.getCost().compareTo(o.getCost()) == 0
+                    && sameShares(e.getShares(), o.getShares())) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT,
+                        "this payment was already recorded a moment ago. Refresh to see the latest balances.");
+            }
+        }
+    }
+
+    /** Compares by value: DynamoDB drops trailing zeros, so 100 and 100.00 must match. */
+    private static boolean sameShares(Map<String, BigDecimal> a, Map<String, BigDecimal> b) {
+        if (a == null || b == null || !a.keySet().equals(b.keySet())) return false;
+        return a.entrySet().stream().allMatch(en -> en.getValue().compareTo(b.get(en.getKey())) == 0);
     }
 
     /** Full replace of an expense. Same body and rules as create. */

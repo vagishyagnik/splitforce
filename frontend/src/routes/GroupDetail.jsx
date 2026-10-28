@@ -78,7 +78,14 @@ export default function GroupDetail() {
       toast.success('Settlement recorded')
       setSettleTarget(null)
     } catch (e) {
-      toast.error(e?.message || 'Could not record settlement')
+      if (String(e?.message).includes('409')) {
+        // Someone else already recorded this payment; the balances on screen are stale.
+        setSettleTarget(null)
+        refetch()
+        toast.error('This payment was just recorded by someone else. Balances refreshed.')
+      } else {
+        toast.error(e?.message || 'Could not record settlement')
+      }
     }
   }
 
