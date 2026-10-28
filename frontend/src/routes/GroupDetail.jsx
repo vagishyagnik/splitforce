@@ -45,6 +45,8 @@ export default function GroupDetail() {
   const { data: group, isLoading, isError, refetch } = useGroup(groupId)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [settleTarget, setSettleTarget] = useState(null)
+  // One id per opened dialog, so every tap on its confirm button is the same payment.
+  const openSettle = (s) => setSettleTarget({ ...s, requestId: crypto.randomUUID() })
   const [category, setCategory] = useState('')
   const [addMembersOpen, setAddMembersOpen] = useState(false)
   const isDesktop = useMediaQuery('(min-width: 1024px)')
@@ -72,7 +74,7 @@ export default function GroupDetail() {
         fromUserId: settleTarget.fromUserId,
         toUserId: settleTarget.toUserId,
         amount: settleTarget.amount,
-        currency: group.baseCurrency,
+        requestId: settleTarget.requestId,
         note: `Settlement · ${settleTarget.fromName} → ${settleTarget.toName}`,
       })
       toast.success('Settlement recorded')
@@ -150,7 +152,7 @@ export default function GroupDetail() {
             <BalancesCard group={group} onAddMembers={() => setAddMembersOpen(true)} />
             <SettlementCard
               group={group}
-              onSettle={(s) => setSettleTarget(s)}
+              onSettle={openSettle}
             />
             <CategoryBreakdownCard
               group={group}
@@ -173,7 +175,7 @@ export default function GroupDetail() {
           memberById={memberById}
           category={category}
           setCategory={setCategory}
-          onSettle={(s) => setSettleTarget(s)}
+          onSettle={openSettle}
           onAddMembers={() => setAddMembersOpen(true)}
         />
       )}

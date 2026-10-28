@@ -44,25 +44,27 @@ public class GroupController {
     private static final int MAX_MEMBERS_PER_GROUP = 100;
     private static final int DESCRIPTION_MAX_LEN = 140;
     private static final int CATEGORY_MAX_LEN = 40;
-    private static final String PAYMENT_CATEGORY = "Payment";
-    private static final java.time.Duration DUPLICATE_PAYMENT_WINDOW = java.time.Duration.ofMinutes(10);
+    static final String PAYMENT_CATEGORY = "Payment";
 
     private final UserService userService;
     private final UserRepository users;
     private final GroupRepository groups;
     private final GroupMemberRepository groupMembers;
     private final ExpenseRepository expenses;
+    private final SettlementLedger settlements;
 
     public GroupController(UserService userService,
                            UserRepository users,
                            GroupRepository groups,
                            GroupMemberRepository groupMembers,
-                           ExpenseRepository expenses) {
+                           ExpenseRepository expenses,
+                           SettlementLedger settlements) {
         this.userService = userService;
         this.users = users;
         this.groups = groups;
         this.groupMembers = groupMembers;
         this.expenses = expenses;
+        this.settlements = settlements;
     }
 
     @GetMapping
@@ -203,19 +205,10 @@ public class GroupController {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "not a member of this group");
         }
 
-        List<Expense> groupExpenses = expenses.listByGroup(groupId);
+        List<Expense> groupExpenses = expenses.listByGroupConsistent(groupId);
 
-        Map<String, BigDecimal> netByUser = new HashMap<>();
-        for (GroupMember m : memberships) netByUser.put(m.getUserId(), BigDecimal.ZERO);
-        for (Expense e : groupExpenses) {
-            if (e.getShares() == null) continue;
-            BigDecimal rate = rateToBase(g, e.getCurrency());
-            for (Map.Entry<String, BigDecimal> s : e.getShares().entrySet()) {
-                if (s.getValue() == null) continue;
-                BigDecimal converted = s.getValue().multiply(rate);
-                netByUser.merge(s.getKey(), converted, BigDecimal::add);
-            }
-        }
+        Map<String, BigDecimal> netByUser = netByUser(g, groupExpenses);
+        for (GroupMember m : memberships) netByUser.putIfAbsent(m.getUserId(), BigDecimal.ZERO);
 
         Map<String, String> nameByUser = new HashMap<>();
         List<Map<String, Object>> memberDtos = new ArrayList<>();
@@ -466,16 +459,8 @@ public class GroupController {
         List<GroupMember> memberships = groupMembers.listByGroup(groupId);
         List<Expense> groupExpenses = expenses.listByGroup(groupId);
 
-        Map<String, BigDecimal> netByUser = new HashMap<>();
-        for (GroupMember m : memberships) netByUser.put(m.getUserId(), BigDecimal.ZERO);
-        for (Expense e : groupExpenses) {
-            if (e.getShares() == null) continue;
-            BigDecimal rate = rateToBase(g, e.getCurrency());
-            for (Map.Entry<String, BigDecimal> s : e.getShares().entrySet()) {
-                if (s.getValue() == null) continue;
-                netByUser.merge(s.getKey(), s.getValue().multiply(rate), BigDecimal::add);
-            }
-        }
+        Map<String, BigDecimal> netByUser = netByUser(g, groupExpenses);
+        for (GroupMember m : memberships) netByUser.putIfAbsent(m.getUserId(), BigDecimal.ZERO);
         for (Map.Entry<String, BigDecimal> entry : netByUser.entrySet()) {
             BigDecimal rounded = entry.getValue().setScale(2, RoundingMode.HALF_UP);
             if (rounded.abs().compareTo(SETTLE_EPSILON) >= 0) {
@@ -487,6 +472,7 @@ public class GroupController {
         for (Expense e : groupExpenses) expenses.delete(e.getGroupId(), e.getExpenseId());
         for (GroupMember m : memberships) groupMembers.delete(m.getGroupId(), m.getUserId());
         groups.delete(groupId);
+        settlements.release(groupId);
         return ResponseEntity.noContent().build();
     }
 
@@ -534,6 +520,93 @@ public class GroupController {
         return fxRatesResponse(g);
     }
 
+    /**
+     * Records a settle-up payment. Unlike a plain expense it is checked against the live balances: the payer
+     * must really owe the payee at least this much right now, so a stale screen (or a second person recording
+     * the same payment) is rejected instead of flipping the balance the other way. Safe to retry with the same
+     * requestId.
+     */
+    @PostMapping("/{groupId}/settlements")
+    public ResponseEntity<Map<String, Object>> settle(@AuthenticationPrincipal OAuth2User principal,
+                                                      @PathVariable("groupId") String groupId,
+                                                      @RequestBody SettleRequest req) {
+        User me = userService.resolveOrCreate(principal);
+        Group g = requireMemberGroup(me, groupId);
+        if (req == null || req.fromUserId == null || req.toUserId == null) {
+            throw badRequest("fromUserId and toUserId are required");
+        }
+        if (req.fromUserId.equals(req.toUserId)) throw badRequest("payer and receiver must differ");
+        if (req.amount == null || req.amount.signum() <= 0) throw badRequest("amount must be > 0");
+        BigDecimal amount = req.amount.setScale(2, RoundingMode.HALF_UP);
+        String requestId = req.requestId == null || req.requestId.isBlank()
+                ? UUID.randomUUID().toString() : req.requestId.trim();
+        if (!requestId.matches("[A-Za-z0-9-]{8,64}")) throw badRequest("invalid requestId");
+
+        CreateExpenseRequest asExpense = new CreateExpenseRequest();
+        asExpense.description = req.note == null || req.note.isBlank() ? "Settlement" : req.note;
+        asExpense.date = req.date;
+        asExpense.category = PAYMENT_CATEGORY;
+        asExpense.cost = amount;
+        asExpense.currency = g.getBaseCurrency();
+        asExpense.paidByUserId = req.fromUserId;
+        asExpense.splitMode = "amount";
+        Participant to = new Participant();
+        to.userId = req.toUserId;
+        to.value = amount;
+        asExpense.participants = List.of(to);
+
+        Expense e = buildExpense(g, asExpense, activeMemberIds(groupId), me.getUserId());
+        e.setPayment(true);
+        e.setCreatedAt(Instant.now().toString());
+        e.setCreatedByUserId(me.getUserId());
+
+        String expenseId = settlements.append(groupId, requestKey(requestId), current -> {
+            requireOutstandingDebt(g, current, req.fromUserId, req.toUserId, amount);
+            return e;
+        });
+
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("expenseId", expenseId);
+        out.put("groupId", groupId);
+        return ResponseEntity.status(HttpStatus.CREATED).body(out);
+    }
+
+    /** Net balance per user in the group's base currency, unrounded. */
+    static Map<String, BigDecimal> netByUser(Group g, List<Expense> groupExpenses) {
+        Map<String, BigDecimal> net = new HashMap<>();
+        for (Expense e : groupExpenses) {
+            if (e.getShares() == null) continue;
+            BigDecimal rate = rateToBase(g, e.getCurrency());
+            for (Map.Entry<String, BigDecimal> s : e.getShares().entrySet()) {
+                if (s.getValue() == null) continue;
+                net.merge(s.getKey(), s.getValue().multiply(rate), BigDecimal::add);
+            }
+        }
+        return net;
+    }
+
+    /** Rejects a payment the balances don't support: the payer must owe, and the payee be owed, at least {@code amount}. */
+    static void requireOutstandingDebt(Group g, List<Expense> current, String from, String to, BigDecimal amount) {
+        Map<String, BigDecimal> net = netByUser(g, current);
+        BigDecimal owes = net.getOrDefault(from, BigDecimal.ZERO).negate();
+        BigDecimal owed = net.getOrDefault(to, BigDecimal.ZERO);
+        BigDecimal slack = SETTLE_EPSILON.negate();
+        if (owes.subtract(amount).compareTo(slack) < 0 || owed.subtract(amount).compareTo(slack) < 0) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "balances have changed: this payment is no longer owed. Refresh to see what is still due.");
+        }
+    }
+
+    private static String requestKey(String requestId) {
+        try {
+            byte[] h = java.security.MessageDigest.getInstance("SHA-256")
+                    .digest(requestId.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            return java.util.HexFormat.of().formatHex(h, 0, 8);
+        } catch (java.security.NoSuchAlgorithmException ex) {
+            throw new IllegalStateException(ex);
+        }
+    }
+
     @PostMapping("/{groupId}/expenses")
     public ResponseEntity<Map<String, Object>> createExpense(@AuthenticationPrincipal OAuth2User principal,
                                                              @PathVariable("groupId") String groupId,
@@ -543,7 +616,11 @@ public class GroupController {
         Set<String> memberIds = activeMemberIds(groupId);
 
         Expense e = buildExpense(g, req, memberIds, me.getUserId());
-        rejectDuplicatePayment(e, expenses.listByGroup(groupId));
+        if (PAYMENT_CATEGORY.equalsIgnoreCase(e.getCategory())) {
+            // Settlements are validated against live balances, which only the settlements endpoint does.
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "settle-up has moved. Refresh the page and record the payment again.");
+        }
         e.setExpenseId(newExpenseId(e.getDate()));
         e.setCreatedAt(Instant.now().toString());
         e.setCreatedByUserId(me.getUserId());
@@ -553,31 +630,6 @@ public class GroupController {
         out.put("expenseId", e.getExpenseId());
         out.put("groupId", groupId);
         return ResponseEntity.status(HttpStatus.CREATED).body(out);
-    }
-
-    /**
-     * Settle-up entries are easy to record twice (both sides tap Settle before seeing the other's), which
-     * flips the balance the other way. Refuse a payment identical to one logged moments ago.
-     */
-    private static void rejectDuplicatePayment(Expense e, List<Expense> existing) {
-        if (!PAYMENT_CATEGORY.equalsIgnoreCase(e.getCategory())) return;
-        Instant cutoff = Instant.now().minus(DUPLICATE_PAYMENT_WINDOW);
-        for (Expense o : existing) {
-            if (!PAYMENT_CATEGORY.equalsIgnoreCase(o.getCategory()) || o.getCreatedAt() == null) continue;
-            if (Instant.parse(o.getCreatedAt()).isBefore(cutoff)) continue;
-            if (e.getPaidByUserId().equals(o.getPaidByUserId())
-                    && e.getCost().compareTo(o.getCost()) == 0
-                    && sameShares(e.getShares(), o.getShares())) {
-                throw new ResponseStatusException(HttpStatus.CONFLICT,
-                        "this payment was already recorded a moment ago. Refresh to see the latest balances.");
-            }
-        }
-    }
-
-    /** Compares by value: DynamoDB drops trailing zeros, so 100 and 100.00 must match. */
-    private static boolean sameShares(Map<String, BigDecimal> a, Map<String, BigDecimal> b) {
-        if (a == null || b == null || !a.keySet().equals(b.keySet())) return false;
-        return a.entrySet().stream().allMatch(en -> en.getValue().compareTo(b.get(en.getKey())) == 0);
     }
 
     /** Full replace of an expense. Same body and rules as create. */
@@ -967,6 +1019,15 @@ public class GroupController {
         public String splitMode;
         public List<Participant> participants;
         public String receiptKey;
+    }
+
+    public static class SettleRequest {
+        public String fromUserId;
+        public String toUserId;
+        public BigDecimal amount;
+        public String date;
+        public String note;
+        public String requestId;
     }
 
     public static class Participant {

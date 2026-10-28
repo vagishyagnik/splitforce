@@ -87,6 +87,9 @@ export function useGroup(groupId) {
     queryKey: qk.group(groupId),
     queryFn: () => apiGet(`/api/groups/${groupId}`),
     enabled: Boolean(groupId),
+    // Balances change from other people's phones; keep this screen close to live so Settle isn't stale.
+    refetchOnWindowFocus: 'always',
+    refetchInterval: 15_000,
   })
 }
 
@@ -220,22 +223,17 @@ export function useDeleteExpense(groupId) {
 export function useSettleUp(groupId) {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: async ({ fromUserId, toUserId, amount, currency, note }) => {
-      const body = {
-        description: note || 'Settlement',
+    // requestId makes retries and double-taps of one confirmation record a single payment; the server also
+    // rejects it if the balances no longer support it.
+    mutationFn: ({ fromUserId, toUserId, amount, note, requestId }) =>
+      apiPost(`/api/groups/${groupId}/settlements`, {
+        fromUserId,
+        toUserId,
+        amount,
+        note: note || 'Settlement',
         date: new Date().toISOString().slice(0, 10),
-        category: 'Payment',
-        notes: null,
-        cost: amount,
-        currency,
-        paidByUserId: fromUserId,
-        splitMode: 'amount',
-        participants: [
-          { userId: toUserId, value: amount },
-        ],
-      }
-      return apiPost(`/api/groups/${groupId}/expenses`, body)
-    },
+        requestId,
+      }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: qk.group(groupId) })
       qc.invalidateQueries({ queryKey: qk.activities })

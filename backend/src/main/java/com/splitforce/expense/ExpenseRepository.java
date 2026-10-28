@@ -32,6 +32,16 @@ public class ExpenseRepository {
                 .collect(Collectors.toList());
     }
 
+    /** Strongly consistent: reflects every write that completed before the call. */
+    public List<Expense> listByGroupConsistent(String groupId) {
+        return table
+                .query(r -> r.queryConditional(QueryConditional.keyEqualTo(Key.builder().partitionValue(groupId).build()))
+                        .consistentRead(true))
+                .items()
+                .stream()
+                .collect(Collectors.toList());
+    }
+
     public long countByGroup(String groupId) {
         return listByGroup(groupId).size();
     }
