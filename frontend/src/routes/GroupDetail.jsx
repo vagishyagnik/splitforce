@@ -526,6 +526,11 @@ function SettlementCard({ group, onSettle }) {
   )
 }
 
+// A person is "in" an expense if they paid for it or owe a share of it.
+function isIn(expense, userId) {
+  return expense.paidByUserId === userId || Number(expense.shares?.[userId]) > 0
+}
+
 function ExpenseHistoryCard({ group, memberById, category, setCategory }) {
   const [q, setQ] = useState('')
   const [showFilters, setShowFilters] = useState(false)
@@ -546,6 +551,8 @@ function ExpenseHistoryCard({ group, memberById, category, setCategory }) {
     }
   }
 
+  const me = group.members.find((m) => m.you)
+
   const filtered = useMemo(() => {
     return (group.expenses || []).filter((e) => {
       if (q) {
@@ -558,8 +565,7 @@ function ExpenseHistoryCard({ group, memberById, category, setCategory }) {
         if (!matches) return false
       }
       if (category && e.category !== category) return false
-      // A person is "in" an expense if they paid for it or owe a share of it.
-      if (person && e.paidByUserId !== person && !(Number(e.shares?.[person]) > 0)) return false
+      if (person && !isIn(e, person)) return false
       if (from && e.date < from) return false
       if (to && e.date > to) return false
       return true
@@ -747,6 +753,7 @@ function ExpenseHistoryCard({ group, memberById, category, setCategory }) {
                 key={e.expenseId}
                 expense={e}
                 paidBy={memberById[e.paidByUserId]}
+                involved={!me || isIn(e, me.userId)}
                 editHref={`/app/activities/${group.groupId}/expenses/${encodeURIComponent(e.expenseId)}/edit`}
                 onDelete={() => setDeleteTarget(e)}
               />
@@ -788,7 +795,7 @@ function ExpenseHistoryCard({ group, memberById, category, setCategory }) {
   )
 }
 
-function ExpenseRow({ expense, paidBy, editHref, onDelete }) {
+function ExpenseRow({ expense, paidBy, involved, editHref, onDelete }) {
   const isPayment = Boolean(expense.payment) || expense.category === 'Payment'
   const receiptUrl = expense.receiptKey ? `${API_BASE}/receipts/${expense.receiptKey}` : null
   return (
@@ -830,6 +837,14 @@ function ExpenseRow({ expense, paidBy, editHref, onDelete }) {
             <>
               <span>·</span>
               <span>{paidBy.you ? 'You paid' : `${paidBy.displayName} paid`}</span>
+            </>
+          )}
+          {!involved && (
+            <>
+              <span>·</span>
+              <span className="font-medium text-ink/70" data-testid={`expense-not-involved-${expense.expenseId}`}>
+                Not involved
+              </span>
             </>
           )}
         </div>
