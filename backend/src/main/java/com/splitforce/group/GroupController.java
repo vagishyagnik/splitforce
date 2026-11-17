@@ -10,6 +10,7 @@ import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
@@ -213,7 +214,8 @@ public class GroupController {
         Map<String, String> nameByUser = new HashMap<>();
         List<Map<String, Object>> memberDtos = new ArrayList<>();
         for (GroupMember m : memberships) {
-            String displayName = m.getDisplayName();
+            Optional<User> member = users.findById(m.getUserId());
+            String displayName = liveName(m, member);
             nameByUser.put(m.getUserId(), displayName);
             BigDecimal net = netByUser.getOrDefault(m.getUserId(), BigDecimal.ZERO)
                     .setScale(2, RoundingMode.HALF_UP);
@@ -224,7 +226,7 @@ public class GroupController {
             dto.put("active", m.isActive());
             dto.put("you", me.getUserId().equals(m.getUserId()));
             dto.put("net", net);
-            users.findById(m.getUserId()).ifPresent(u -> {
+            member.ifPresent(u -> {
                 dto.put("email", u.getEmail());
                 dto.put("placeholder", u.isPlaceholder());
                 dto.put("picture", userService.resolvePictureUrl(u));
@@ -327,6 +329,16 @@ public class GroupController {
         return out;
     }
 
+    /**
+     * The member's current account name, so a rename on the profile page shows in every group.
+     * The name stored on the membership row is only a fallback for users without one.
+     */
+    private static String liveName(GroupMember m, Optional<User> user) {
+        return user.map(User::getName)
+                .filter(n -> !n.isBlank())
+                .orElse(m.getDisplayName());
+    }
+
     private static Map<String, Object> memberSummary(GroupMember m) {
         Map<String, Object> dto = new LinkedHashMap<>();
         dto.put("userId", m.getUserId());
@@ -374,13 +386,13 @@ public class GroupController {
         StringBuilder csv = new StringBuilder();
         List<String> header = new ArrayList<>(List.of(
                 "date", "description", "category", "cost", "currency", "base_cost", "payer"));
+        Map<String, String> nameByUser = new HashMap<>();
         for (GroupMember m : memberships) {
-            header.add(csvText(m.getDisplayName() + " (net " + g.getBaseCurrency() + ")"));
+            String name = liveName(m, users.findById(m.getUserId()));
+            nameByUser.put(m.getUserId(), name);
+            header.add(csvText(name + " (net " + g.getBaseCurrency() + ")"));
         }
         csv.append(csvRow(header)).append('\n');
-
-        Map<String, String> nameByUser = new HashMap<>();
-        for (GroupMember m : memberships) nameByUser.put(m.getUserId(), m.getDisplayName());
 
         for (Expense e : groupExpenses) {
             BigDecimal rate = rateToBase(g, e.getCurrency());
