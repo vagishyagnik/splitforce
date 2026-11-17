@@ -52,7 +52,7 @@ public class CookieSecurityContextRepository implements SecurityContextRepositor
 
     public CookieSecurityContextRepository(SignedCookies cookies,
                                            ObjectMapper json,
-                                           @Value("${app.auth.idle-minutes:60}") long idleMinutes,
+                                           @Value("${app.auth.idle-minutes:43200}") long idleMinutes,
                                            @Value("${app.auth.session-days:30}") long sessionDays) {
         this.cookies = cookies;
         this.json = json;

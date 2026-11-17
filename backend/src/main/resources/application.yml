@@ -32,8 +32,8 @@ app:
     # HMAC key for the session + OAuth state cookies. Must be at least 32 bytes; set a random one in AWS.
     secret: ${SESSION_SECRET:local-dev-only-session-secret-0123456789}
     cookie-secure: ${COOKIE_SECURE:false}
-    # Logged out after this long without a request...
-    idle-minutes: 60
+    # Logged out after this long without a request (30 days)...
+    idle-minutes: 43200
     # ...and after this long since login, however active.
     session-days: 30
   dynamodb:
