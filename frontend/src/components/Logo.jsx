@@ -6,13 +6,13 @@ export function Logo({ size = 32, className }) {
       <svg
         width={size}
         height={size}
-        viewBox="0 0 40 40"
+        viewBox="0 0 100 100"
         aria-hidden="true"
         className="shrink-0"
       >
-        <circle cx="20" cy="20" r="18" fill="#0F1720" />
-        <path d="M13 24 L20 12 L27 24 Z" fill="#FF5A36" />
-        <circle cx="20" cy="24" r="2.2" fill="#FAF8F5" />
+        {/* A pie with your share pulled out. */}
+        <path d="M46 54 L46 14 A40 40 0 1 0 86 54 Z" fill="#0F1720" />
+        <path d="M54 46 L54 6 A40 40 0 0 1 94 46 Z" fill="#FF5A36" />
       </svg>
     </span>
   )
