@@ -436,7 +436,7 @@ Upload a receipt image before saving the expense. Caller must be a group member.
 
 **Request:** `multipart/form-data`, one part named `file`.
 - Max size: **5 MB**
-- Allowed types: `image/jpeg`, `image/jpg`, `image/png`, `image/webp`, `image/heic`, `image/heif`
+- Allowed types: `image/jpeg`, `image/jpg`, `image/png`, `image/webp`, `image/heic`, `image/heif`, `application/pdf`
 
 **Response 200**
 ```json

@@ -34,6 +34,7 @@ public class ReceiptController {
 
     private static final long MAX_BYTES = 4L * 1024 * 1024;
     private static final String PREFIX = "receipts/";
+    private static final String PDF = "application/pdf";
 
     private final UserService userService;
     private final GroupMemberRepository groupMembers;
@@ -56,9 +57,12 @@ public class ReceiptController {
         if (file == null || file.isEmpty()) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "file required");
         if (file.getSize() > MAX_BYTES) throw new ResponseStatusException(HttpStatus.PAYLOAD_TOO_LARGE, "file too large (max 4MB)");
         String type = ImageTypes.normalize(file.getContentType());
-        if (!ImageTypes.isAllowed(type)) {
+        if (!ImageTypes.isAllowed(type) && !PDF.equals(type)) {
             throw new ResponseStatusException(HttpStatus.UNSUPPORTED_MEDIA_TYPE,
-                    "unsupported type " + type + " — use jpeg / png / webp / heic");
+                    "unsupported type " + type + " — use jpeg / png / webp / heic / pdf");
+        }
+        if (PDF.equals(type) && !looksLikePdf(file)) {
+            throw new ResponseStatusException(HttpStatus.UNSUPPORTED_MEDIA_TYPE, "file is not a valid PDF");
         }
 
         String ext = extensionFor(type, file.getOriginalFilename());
@@ -81,13 +85,18 @@ public class ReceiptController {
         Optional<BlobStore.Blob> blob = store.get(key);
         if (blob.isEmpty()) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "receipt not found");
         BlobStore.Blob b = blob.get();
-        MediaType type = ImageTypes.isAllowed(b.contentType())
-                ? MediaType.parseMediaType(b.contentType())
-                : mediaTypeFor(filename);
+        boolean pdf = PDF.equals(ImageTypes.normalize(b.contentType())) || filename.toLowerCase(Locale.ROOT).endsWith(".pdf");
+        MediaType type = pdf
+                ? MediaType.APPLICATION_PDF
+                : ImageTypes.isAllowed(b.contentType())
+                        ? MediaType.parseMediaType(b.contentType())
+                        : mediaTypeFor(filename);
         ResponseEntity.BodyBuilder res = ResponseEntity.ok()
                 .cacheControl(CacheControl.maxAge(java.time.Duration.ofDays(1)).cachePrivate())
                 .contentType(type)
-                .header("Content-Security-Policy", ImageTypes.BLOB_CSP);
+                .header("X-Content-Type-Options", "nosniff")
+                // the browser's PDF viewer doesn't work under a sandboxed CSP
+                .header("Content-Security-Policy", pdf ? "default-src 'none'" : ImageTypes.BLOB_CSP);
         if (b.size() >= 0) res.contentLength(b.size());
         return res.body(new InputStreamResource(b.stream()));
     }
@@ -100,6 +109,14 @@ public class ReceiptController {
         if (!iAmMember) throw new ResponseStatusException(HttpStatus.FORBIDDEN, "not a member of this group");
     }
 
+    private static boolean looksLikePdf(MultipartFile file) {
+        try (InputStream in = file.getInputStream()) {
+            return java.util.Arrays.equals(in.readNBytes(5), "%PDF-".getBytes(java.nio.charset.StandardCharsets.US_ASCII));
+        } catch (IOException e) {
+            return false;
+        }
+    }
+
     private static String safeSegment(String s) {
         if (s == null) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "bad path");
         if (s.contains("/") || s.contains("\\") || s.contains("..")) {
@@ -110,6 +127,7 @@ public class ReceiptController {
 
     private static String extensionFor(String contentType, String filename) {
         if ("image/jpeg".equals(contentType) || "image/jpg".equals(contentType)) return "jpg";
+        if (PDF.equals(contentType)) return "pdf";
         if ("image/png".equals(contentType)) return "png";
         if ("image/webp".equals(contentType)) return "webp";
         if ("image/heic".equals(contentType) || "image/heif".equals(contentType)) return "heic";

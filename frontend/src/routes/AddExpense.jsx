@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { toast } from 'sonner'
-import { ArrowLeft, Camera, ImagePlus, X, Check, AlertCircle, Trash2, Receipt as ReceiptIcon } from 'lucide-react'
+import { ArrowLeft, Camera, ImagePlus, X, Check, AlertCircle, Trash2, Receipt as ReceiptIcon, FileText } from 'lucide-react'
 import {
   useCreateExpense,
   useDeleteExpense,
@@ -163,11 +163,16 @@ export default function AddExpense() {
       setReceiptError('Receipt too large — max 4 MB.')
       return
     }
-    if (!/^image\//.test(f.type) && !/heic|heif/i.test(f.name)) {
-      setReceiptError('Please pick an image (JPG, PNG, WEBP, HEIC).')
+    const isPdf = f.type === 'application/pdf' || /\.pdf$/i.test(f.name)
+    if (!isPdf && !/^image\//.test(f.type) && !/heic|heif/i.test(f.name)) {
+      setReceiptError('Please pick an image or PDF (JPG, PNG, WEBP, HEIC, PDF).')
       return
     }
     setReceiptFile(f)
+    if (isPdf) {
+      setReceiptPreview('')
+      return
+    }
     const reader = new FileReader()
     reader.onload = () => setReceiptPreview(String(reader.result))
     reader.readAsDataURL(f)
@@ -628,7 +633,7 @@ export default function AddExpense() {
           <input
             ref={galleryRef}
             type="file"
-            accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
+            accept="image/jpeg,image/png,image/webp,image/heic,image/heif,application/pdf"
             onChange={onFilePicked}
             className="sr-only"
             data-testid="receipt-gallery-input"
@@ -659,11 +664,17 @@ export default function AddExpense() {
             </div>
           ) : receiptFile ? (
             <div className="flex items-center gap-4" data-testid="receipt-preview">
-              <img
-                src={receiptPreview}
-                alt="Receipt preview"
-                className="h-24 w-24 rounded-input object-cover border border-hairline"
-              />
+              {receiptPreview ? (
+                <img
+                  src={receiptPreview}
+                  alt="Receipt preview"
+                  className="h-24 w-24 rounded-input object-cover border border-hairline"
+                />
+              ) : (
+                <span className="inline-flex h-24 w-24 shrink-0 items-center justify-center rounded-input border border-hairline bg-mist text-muted">
+                  <FileText size={22} />
+                </span>
+              )}
               <div className="flex-1 min-w-0">
                 <div className="text-[14px] font-medium truncate">{receiptFile.name}</div>
                 <div className="text-[12px] text-muted mt-0.5">
@@ -708,7 +719,7 @@ export default function AddExpense() {
                   <ImagePlus size={14} /> Choose from gallery
                 </Button>
               </div>
-              <Helper>Optional. JPG, PNG, WEBP, or HEIC · up to 4 MB.</Helper>
+              <Helper>Optional. JPG, PNG, WEBP, HEIC, or PDF · up to 4 MB.</Helper>
             </div>
           )}
           {receiptError && <FieldError>{receiptError}</FieldError>}
