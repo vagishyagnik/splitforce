@@ -179,6 +179,35 @@ public class UserService {
         return user;
     }
 
+    public User applyPaymentQrUpload(User user, String contentType) {
+        user.setPaymentQrContentType(contentType);
+        user.setPaymentQrUpdatedAt(Instant.now().toEpochMilli());
+        users.save(user);
+        return user;
+    }
+
+    public User clearPaymentQr(User user) {
+        user.setPaymentQrContentType(null);
+        user.setPaymentQrUpdatedAt(null);
+        users.save(user);
+        return user;
+    }
+
+    /** Public URL of the user's payment QR image, or null if they haven't uploaded one. */
+    public String resolvePaymentQrUrl(User user) {
+        if (user == null || user.getPaymentQrContentType() == null) return null;
+        long v = user.getPaymentQrUpdatedAt() == null ? 0L : user.getPaymentQrUpdatedAt();
+        if (!publicUrl.isEmpty()) return publicUrl + "/payment-qr/" + user.getUserId() + "?v=" + v;
+        if (RequestContextHolder.getRequestAttributes() instanceof ServletRequestAttributes) {
+            return ServletUriComponentsBuilder.fromCurrentContextPath()
+                    .path("/payment-qr/")
+                    .path(user.getUserId())
+                    .query("v=" + v)
+                    .toUriString();
+        }
+        return "/payment-qr/" + user.getUserId() + "?v=" + v;
+    }
+
     public User findOrCreateMember(String displayName, String email) {
         String cleanName = displayName == null ? "" : displayName.trim();
         String cleanEmail = isBlank(email) ? "" : email.trim().toLowerCase(Locale.ROOT);

@@ -84,6 +84,7 @@ public class ProfileController {
         body.put("email", email);
         body.put("upiId", userService.plainUpiId(target));
         body.put("picture", userService.resolvePictureUrl(target));
+        body.put("paymentQr", userService.resolvePaymentQrUrl(target));
         body.put("placeholder", target.isPlaceholder());
         body.put("isYou", isSelf);
         body.put("commonGroups", common);

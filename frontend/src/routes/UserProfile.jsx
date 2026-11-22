@@ -1,10 +1,12 @@
+import { useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { ArrowUpRight, ArrowLeft, Copy } from 'lucide-react'
+import { ArrowUpRight, ArrowLeft, Copy, QrCode, Maximize2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { useUserProfile } from '../api/hooks.js'
 import { Avatar } from '../components/Avatar.jsx'
 import { Card } from '../components/Card.jsx'
 import { Pill } from '../components/Pill.jsx'
+import { Modal } from '../components/Modal.jsx'
 import { GroupTypeTag } from '../components/GroupTypeTag.jsx'
 import { Skeleton } from '../components/Skeleton.jsx'
 import { EmptyState } from '../components/EmptyState.jsx'
@@ -34,6 +36,7 @@ function ProtectedAvatar({ name, picture }) {
 export default function UserProfile() {
   const { userId } = useParams()
   const { data, isLoading, isError } = useUserProfile(userId)
+  const [qrOpen, setQrOpen] = useState(false)
 
   const copyUpi = async () => {
     try {
@@ -99,6 +102,60 @@ export default function UserProfile() {
               </div>
             </div>
           </Card>
+
+          {data.paymentQr && (
+            <section className="mt-8">
+              <div className="flex items-center gap-2">
+                <QrCode size={16} className="text-ink" />
+                <h2 className="label-caps !mb-0">Scan to pay {data.name?.split(' ')[0] || ''}</h2>
+              </div>
+              <Card className="mt-3 p-6 flex flex-col items-center">
+                <button
+                  type="button"
+                  onClick={() => setQrOpen(true)}
+                  className="group relative rounded-card focus:outline-none focus:ring-2 focus:ring-ink/40"
+                  aria-label="Enlarge QR code"
+                  data-testid="user-qr-image"
+                >
+                  <img
+                    src={data.paymentQr}
+                    alt={`Payment QR code for ${data.name}`}
+                    className="h-56 w-56 rounded-card border border-hairline object-contain bg-white p-2"
+                  />
+                  <span className="absolute inset-0 rounded-card flex items-center justify-center bg-ink/40 text-cream opacity-0 group-hover:opacity-100 transition-opacity">
+                    <Maximize2 size={24} />
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setQrOpen(true)}
+                  className="mt-3 text-[13px] text-muted hover:text-ink inline-flex items-center gap-1.5"
+                >
+                  <Maximize2 size={14} /> Tap to enlarge for scanning
+                </button>
+              </Card>
+            </section>
+          )}
+
+          <Modal
+            open={qrOpen}
+            onClose={() => setQrOpen(false)}
+            title={`Scan to pay ${data.name?.split(' ')[0] || ''}`}
+            size="lg"
+            testId="user-qr-modal"
+          >
+            <div className="flex flex-col items-center">
+              <img
+                src={data.paymentQr}
+                alt={`Payment QR code for ${data.name}`}
+                className="w-full max-w-[22rem] aspect-square rounded-card border border-hairline object-contain bg-white p-3"
+                data-testid="user-qr-image-large"
+              />
+              <p className="mt-4 text-[13.5px] text-muted text-center">
+                Open any UPI app, tap scan, and point it here.
+              </p>
+            </div>
+          </Modal>
 
           <section className="mt-8">
             <h2 className="label-caps">Groups you share</h2>

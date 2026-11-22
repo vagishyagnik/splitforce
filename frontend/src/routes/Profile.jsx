@@ -1,9 +1,10 @@
 import { useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { LogOut, ArrowUpRight, Camera, Pencil, Check, X } from 'lucide-react'
+import { LogOut, ArrowUpRight, Camera, Pencil, Check, X, QrCode, Upload, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { useAuth } from '../auth/AuthContext.jsx'
-import { useActivities, useUpdateMe, useUploadMyPicture } from '../api/hooks.js'
+import { useActivities, useUpdateMe, useUploadMyPicture, useUploadMyPaymentQr, useDeleteMyPaymentQr } from '../api/hooks.js'
+import { detectQr } from '../util/qr.js'
 import { Avatar } from '../components/Avatar.jsx'
 import { Button, IconButton } from '../components/Button.jsx'
 import { Card } from '../components/Card.jsx'
@@ -23,12 +24,16 @@ export default function Profile() {
   const { data, isLoading } = useActivities()
   const updateMe = useUpdateMe()
   const uploadPicture = useUploadMyPicture()
+  const uploadQr = useUploadMyPaymentQr()
+  const deleteQr = useDeleteMyPaymentQr()
 
   const [editingName, setEditingName] = useState(false)
   const [draftName, setDraftName] = useState('')
   const [editingUpi, setEditingUpi] = useState(false)
   const [draftUpi, setDraftUpi] = useState('')
+  const [scanningQr, setScanningQr] = useState(false)
   const fileRef = useRef(null)
+  const qrRef = useRef(null)
 
   const startNameEdit = () => {
     setDraftName(user?.name || '')
@@ -113,6 +118,54 @@ export default function Profile() {
       toast.error(err?.message || 'Could not upload picture')
     } finally {
       e.target.value = ''
+    }
+  }
+
+  const onPickQr = () => qrRef.current?.click()
+
+  const onQrFileChange = async (e) => {
+    const f = e.target.files?.[0]
+    if (!f) return
+    if (f.size > MAX_PICTURE_BYTES) {
+      toast.error('QR image too large — max 4 MB.')
+      e.target.value = ''
+      return
+    }
+    if (!/^image\//.test(f.type)) {
+      toast.error('Pick an image of your QR (JPG, PNG, WEBP).')
+      e.target.value = ''
+      return
+    }
+    // Make sure it actually contains a scannable QR before uploading.
+    try {
+      setScanningQr(true)
+      const hasQr = await detectQr(f)
+      if (hasQr === false) {
+        toast.error("That image doesn't contain a QR code. Upload your payment QR.")
+        e.target.value = ''
+        return
+      }
+    } finally {
+      setScanningQr(false)
+    }
+    try {
+      await uploadQr.mutateAsync(f)
+      await refresh()
+      toast.success('Payment QR updated')
+    } catch (err) {
+      toast.error(err?.message || 'Could not upload QR')
+    } finally {
+      e.target.value = ''
+    }
+  }
+
+  const onRemoveQr = async () => {
+    try {
+      await deleteQr.mutateAsync()
+      await refresh()
+      toast.success('Payment QR removed')
+    } catch (err) {
+      toast.error(err?.message || 'Could not remove QR')
     }
   }
 
@@ -247,6 +300,62 @@ export default function Profile() {
               </div>
             )}
           </div>
+        </div>
+      </Card>
+
+      <Card className="mt-6 p-6 sm:p-8">
+        <div className="flex items-center gap-2">
+          <QrCode size={18} className="text-ink" />
+          <h2 className="font-editorial text-[22px] leading-tight">Payment QR code</h2>
+        </div>
+        <p className="mt-1 text-[13.5px] text-muted">
+          Upload your UPI / payment QR so group-mates can scan and pay you back in one tap.
+          It shows on your profile for people who share a group with you.
+        </p>
+
+        <div className="mt-5 flex flex-col sm:flex-row items-center sm:items-start gap-5">
+          {user?.paymentQr ? (
+            <img
+              src={user.paymentQr}
+              alt="Your payment QR code"
+              className="h-44 w-44 rounded-card border border-hairline object-contain bg-white p-2"
+              data-testid="profile-qr-image"
+            />
+          ) : (
+            <div className="h-44 w-44 rounded-card border border-dashed border-hairline bg-mist/50 flex flex-col items-center justify-center text-muted">
+              <QrCode size={40} strokeWidth={1.25} />
+              <span className="mt-2 text-[12px]">No QR yet</span>
+            </div>
+          )}
+
+          <div className="flex flex-col gap-2">
+            <Button
+              variant="ink"
+              onClick={onPickQr}
+              disabled={uploadQr.isPending || scanningQr}
+              data-testid="profile-qr-upload"
+            >
+              <Upload size={15} /> {scanningQr ? 'Checking…' : uploadQr.isPending ? 'Uploading…' : user?.paymentQr ? 'Replace QR' : 'Upload QR'}
+            </Button>
+            {user?.paymentQr && (
+              <Button
+                variant="ghost"
+                onClick={onRemoveQr}
+                disabled={deleteQr.isPending}
+                data-testid="profile-qr-remove"
+              >
+                <Trash2 size={15} /> {deleteQr.isPending ? 'Removing…' : 'Remove'}
+              </Button>
+            )}
+          </div>
+          <input
+            ref={qrRef}
+            type="file"
+            accept="image/*"
+            onChange={onQrFileChange}
+            className="hidden"
+            data-testid="profile-qr-input"
+          />
         </div>
       </Card>
 

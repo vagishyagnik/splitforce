@@ -62,7 +62,7 @@ public class SecurityConfig {
             .securityContext(ctx -> ctx.securityContextRepository(sessionCookies))
             .requestCache(cache -> cache.requestCache(new NullRequestCache()))
             .authorizeHttpRequests(auth -> auth
-                .requestMatchers("/", "/api/health", "/error", "/pictures/**").permitAll()
+                .requestMatchers("/", "/api/health", "/error", "/pictures/**", "/payment-qr/**").permitAll()
                 .requestMatchers("/api/**", "/receipts/**").authenticated()
                 .anyRequest().permitAll()
             )

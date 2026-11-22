@@ -19,6 +19,8 @@ public class User {
     private String picture;
     private String pictureContentType;
     private Long pictureUpdatedAt;
+    private String paymentQrContentType;
+    private Long paymentQrUpdatedAt;
     private boolean placeholder;
     private String createdAt;
     private List<ApiToken> apiTokens;
@@ -45,6 +47,12 @@ public class User {
 
     public Long getPictureUpdatedAt() { return pictureUpdatedAt; }
     public void setPictureUpdatedAt(Long pictureUpdatedAt) { this.pictureUpdatedAt = pictureUpdatedAt; }
+
+    public String getPaymentQrContentType() { return paymentQrContentType; }
+    public void setPaymentQrContentType(String paymentQrContentType) { this.paymentQrContentType = paymentQrContentType; }
+
+    public Long getPaymentQrUpdatedAt() { return paymentQrUpdatedAt; }
+    public void setPaymentQrUpdatedAt(Long paymentQrUpdatedAt) { this.paymentQrUpdatedAt = paymentQrUpdatedAt; }
 
     public boolean isPlaceholder() { return placeholder; }
     public void setPlaceholder(boolean placeholder) { this.placeholder = placeholder; }

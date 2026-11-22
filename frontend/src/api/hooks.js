@@ -59,6 +59,22 @@ export function useUploadMyPicture() {
   })
 }
 
+export function useUploadMyPaymentQr() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (file) => apiUpload('/api/me/payment-qr', file),
+    onSuccess: () => qc.invalidateQueries({ queryKey: qk.me }),
+  })
+}
+
+export function useDeleteMyPaymentQr() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: () => apiDelete('/api/me/payment-qr'),
+    onSuccess: () => qc.invalidateQueries({ queryKey: qk.me }),
+  })
+}
+
 // ---------- API tokens (for the MCP server) ----------
 export function useApiTokens() {
   return useQuery({

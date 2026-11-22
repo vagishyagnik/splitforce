@@ -134,6 +134,17 @@ resource "aws_cloudfront_distribution" "site" {
     compress               = false
   }
 
+  # Payment QR images: same versioned-immutable caching as profile pictures.
+  ordered_cache_behavior {
+    path_pattern           = "/payment-qr/*"
+    target_origin_id       = local.api_origin
+    viewer_protocol_policy = "redirect-to-https"
+    allowed_methods        = ["GET", "HEAD"]
+    cached_methods         = ["GET", "HEAD"]
+    cache_policy_id        = aws_cloudfront_cache_policy.pictures.id
+    compress               = false
+  }
+
   restrictions {
     geo_restriction {
       restriction_type = "none"

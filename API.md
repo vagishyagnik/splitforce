@@ -79,12 +79,14 @@ Returns the signed-in user's profile.
   "email": "you@example.com",
   "name": "Your Name",
   "upiId": "you@okhdfcbank",
-  "picture": "http://localhost:9090/pictures/u_xxx?v=1690000000000"
+  "picture": "http://localhost:9090/pictures/u_xxx?v=1690000000000",
+  "paymentQr": "http://localhost:9090/payment-qr/u_xxx?v=1690000000000"
 }
 ```
 
 - `picture` may be an uploaded server URL (`/pictures/<userId>?v=<epoch>`) or the Google-provided URL for users who never uploaded — always safe to `<img src>` directly.
 - `upiId` is `null` if unset. Stored encrypted at rest (AES-256-GCM); only returned decrypted to the owner here and to group-mates via `GET /api/users/{userId}`.
+- `paymentQr` is the URL of the user's uploaded payment-QR image (`/payment-qr/<userId>?v=<epoch>`), or `null` if none. Managed via `POST`/`DELETE /api/me/payment-qr` below.
 - **401** when session is missing / expired. Trigger a login redirect.
 
 ### `PATCH /api/me`
@@ -113,12 +115,14 @@ so profiles can't be enumerated). Requesting your own `userId` always works.
   "email": "them@example.com",
   "upiId": "them@okaxis",
   "picture": "http://localhost:9090/pictures/u_yyy?v=...",
+  "paymentQr": "http://localhost:9090/payment-qr/u_yyy?v=...",
   "placeholder": false,
   "isYou": false,
   "commonGroups": [{ "groupId": "abc", "name": "Goa trip", "type": "trip", "currency": "INR" }]
 }
 ```
 - `email` is `null` for placeholder (not-signed-in) members.
+- `paymentQr` is the group-mate's payment-QR image URL, or `null` if they haven't uploaded one.
 - **404** when no shared group exists or the user is unknown.
 
 ### `PATCH /api/groups/{groupId}/members/me`
@@ -151,6 +155,25 @@ Upload a new profile picture.
 
 ### `GET /pictures/{userId}`
 Serves the uploaded picture bytes. Public. Cache-Control `no-cache`. Returns `404` if the user has no upload.
+
+### `POST /api/me/payment-qr`
+Upload your payment QR code image (UPI / PayTM collect QR, etc.) so group-mates can scan it to pay you back.
+
+**Request:** `multipart/form-data`, one part named `file`.
+- Max size: **4 MB**
+- `Content-Type` must be `image/jpeg`, `image/png`, `image/webp`, or `image/heic`/`heif`
+
+**Response 200** — same shape as `GET /api/me` (with updated `paymentQr` URL).
+
+**Errors:** `400` empty file / not image / too large.
+
+### `DELETE /api/me/payment-qr`
+Remove your payment QR.
+
+**Response 200** — same shape as `GET /api/me` (with `paymentQr` now `null`).
+
+### `GET /payment-qr/{userId}`
+Serves the uploaded payment-QR bytes. Public (served behind a versioned, immutable cache like `/pictures`). Returns `404` if the user has no QR.
 
 ---
 
