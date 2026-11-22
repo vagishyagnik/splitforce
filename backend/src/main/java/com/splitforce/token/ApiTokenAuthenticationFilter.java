@@ -49,7 +49,14 @@ public class ApiTokenAuthenticationFilter extends OncePerRequestFilter {
             chain.doFilter(request, response);
             return;
         }
-        Optional<User> user = tokens.authenticate(header.substring(BEARER.length()).trim());
+        String token = header.substring(BEARER.length()).trim();
+        // Only personal access tokens (sf_...) are ours to verify here; OAuth JWTs are handled by
+        // the MCP resource-server filter that runs before this one.
+        if (!token.startsWith(ApiTokenService.PREFIX)) {
+            chain.doFilter(request, response);
+            return;
+        }
+        Optional<User> user = tokens.authenticate(token);
         if (user.isEmpty()) {
             response.setStatus(HttpStatus.UNAUTHORIZED.value());
             return;

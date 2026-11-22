@@ -6,6 +6,9 @@ import org.springframework.context.annotation.Configuration;
 import com.splitforce.expense.Expense;
 import com.splitforce.group.Group;
 import com.splitforce.group.GroupMember;
+import com.splitforce.oauth.OAuthAuthCode;
+import com.splitforce.oauth.OAuthClient;
+import com.splitforce.oauth.OAuthSigningKey;
 import com.splitforce.user.User;
 
 import software.amazon.awssdk.enhanced.dynamodb.DynamoDbEnhancedClient;
@@ -19,6 +22,9 @@ public class DynamoDbTables {
     public static final String GROUPS = "groups";
     public static final String GROUP_MEMBERS = "group_members";
     public static final String EXPENSES = "expenses";
+    public static final String OAUTH_CLIENTS = "oauth_clients";
+    public static final String OAUTH_AUTH_CODES = "oauth_auth_codes";
+    public static final String OAUTH_KEYS = "oauth_keys";
 
     private final String prefix;
     private final DynamoDbEnhancedClient enhanced;
@@ -48,5 +54,20 @@ public class DynamoDbTables {
     @Bean
     public DynamoDbTable<Expense> expensesTable() {
         return enhanced.table(tableName(EXPENSES), TableSchema.fromBean(Expense.class));
+    }
+
+    @Bean
+    public DynamoDbTable<OAuthClient> oauthClientsTable() {
+        return enhanced.table(tableName(OAUTH_CLIENTS), TableSchema.fromBean(OAuthClient.class));
+    }
+
+    @Bean
+    public DynamoDbTable<OAuthAuthCode> oauthAuthCodesTable() {
+        return enhanced.table(tableName(OAUTH_AUTH_CODES), TableSchema.fromBean(OAuthAuthCode.class));
+    }
+
+    @Bean
+    public DynamoDbTable<OAuthSigningKey> oauthKeysTable() {
+        return enhanced.table(tableName(OAUTH_KEYS), TableSchema.fromBean(OAuthSigningKey.class));
     }
 }

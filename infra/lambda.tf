@@ -44,7 +44,7 @@ resource "aws_iam_role_policy" "backend" {
         Action = [
           "dynamodb:DescribeTable", "dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:UpdateItem",
           "dynamodb:DeleteItem", "dynamodb:Query", "dynamodb:Scan", "dynamodb:BatchGetItem",
-          "dynamodb:BatchWriteItem",
+          "dynamodb:BatchWriteItem", "dynamodb:UpdateTimeToLive",
         ]
         Resource = flatten([for t in local.dynamodb_tables : [t.arn, "${t.arn}/index/*"]])
       },

@@ -94,11 +94,59 @@ resource "aws_dynamodb_table" "expenses" {
   }
 }
 
+# OAuth 2.1 state for the remote MCP endpoint. Traffic is a handful of requests per login, so these
+# use on-demand (PAY_PER_REQUEST) billing: it keeps the provisioned 25 RCU + 25 WCU free-tier budget
+# above untouched, and at this volume the on-demand cost rounds to zero.
+resource "aws_dynamodb_table" "oauth_clients" {
+  name                        = "splitforce_oauth_clients"
+  billing_mode                = "PAY_PER_REQUEST"
+  deletion_protection_enabled = true
+  hash_key                    = "clientId"
+
+  attribute {
+    name = "clientId"
+    type = "S"
+  }
+}
+
+resource "aws_dynamodb_table" "oauth_auth_codes" {
+  name                        = "splitforce_oauth_auth_codes"
+  billing_mode                = "PAY_PER_REQUEST"
+  deletion_protection_enabled = true
+  hash_key                    = "codeHash"
+
+  attribute {
+    name = "codeHash"
+    type = "S"
+  }
+
+  # Authorization codes are single-use and short-lived; TTL sweeps any that are never redeemed.
+  ttl {
+    attribute_name = "expiresAt"
+    enabled        = true
+  }
+}
+
+resource "aws_dynamodb_table" "oauth_keys" {
+  name                        = "splitforce_oauth_keys"
+  billing_mode                = "PAY_PER_REQUEST"
+  deletion_protection_enabled = true
+  hash_key                    = "id"
+
+  attribute {
+    name = "id"
+    type = "S"
+  }
+}
+
 locals {
   dynamodb_tables = [
     aws_dynamodb_table.users,
     aws_dynamodb_table.groups,
     aws_dynamodb_table.group_members,
     aws_dynamodb_table.expenses,
+    aws_dynamodb_table.oauth_clients,
+    aws_dynamodb_table.oauth_auth_codes,
+    aws_dynamodb_table.oauth_keys,
   ]
 }

@@ -64,7 +64,8 @@ locals {
   api_origin = "api"
   # Function URL is https://<id>.lambda-url.<region>.on.aws/
   api_domain = replace(replace(aws_lambda_function_url.live.function_url, "https://", ""), "/", "")
-  api_paths  = ["/api/*", "/oauth2/*", "/login/*", "/receipts/*"]
+  # /.well-known/* and /oauth2/* bootstrap MCP clients through the OAuth flow; /api/* covers /api/mcp.
+  api_paths = ["/api/*", "/oauth2/*", "/.well-known/*", "/login/*", "/receipts/*"]
 }
 
 resource "aws_cloudfront_distribution" "site" {

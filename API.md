@@ -23,7 +23,21 @@ Auth is not a JSON endpoint — it's a redirect flow.
 | Failure redirect | 302 | `${FRONTEND_URL}/?login=failed` |
 | Log out | `POST` | `/api/logout` → `204 No Content` |
 
-**API tokens:** non-browser clients (the MCP server in `mcp/`) send `Authorization: Bearer sf_...` instead of the cookie. A bearer header that doesn't verify (malformed, unknown, revoked, expired) is a `401` on any path, with no fallback to the cookie.
+**Bearer tokens:** non-browser clients send `Authorization: Bearer <token>` instead of the cookie. Two token types are accepted and resolve to the same per-user principal:
+- **Personal access tokens** — `sf_...` (the local stdio MCP server, scripts). A bearer header that doesn't verify (malformed, unknown, revoked, expired) is a `401` on any path, with no fallback to the cookie.
+- **OAuth 2.1 access tokens** — RS256 JWTs issued to the remote MCP endpoint (`/api/mcp`). Validated locally against the JWKS; audience is the MCP resource URL.
+
+**Remote MCP + OAuth 2.1:** the MCP server is built into the backend at `POST /api/mcp` (JSON-RPC, stateless JSON mode). Clients discover the authorization server and obtain a JWT via standard OAuth 2.1 (Authorization Code + PKCE, Dynamic Client Registration) — no manual token.
+
+| Purpose | Method | URL |
+|---|---|---|
+| MCP endpoint (JSON-RPC) | `POST` | `/api/mcp` — `401` carries `WWW-Authenticate: Bearer resource_metadata=...` |
+| Protected-resource metadata (RFC 9728) | `GET` | `/.well-known/oauth-protected-resource` |
+| Authorization-server metadata (RFC 8414) | `GET` | `/.well-known/oauth-authorization-server` |
+| Dynamic client registration (RFC 7591) | `POST` | `/oauth2/register` → `201` public PKCE client |
+| Authorize (Authorization Code + PKCE, S256) | `GET` | `/oauth2/authorize` |
+| Token | `POST` | `/oauth2/token` (form-encoded) → `{ access_token, token_type, expires_in, scope }` |
+| JWKS (verify access tokens) | `GET` | `/oauth2/jwks` |
 
 | Purpose | Method | URL |
 |---|---|---|
@@ -35,7 +49,7 @@ Token management requires the browser session; calling these with a bearer token
 
 Any `/api/**` request without a valid session returns **`401 Unauthorized`** with an empty body. Use `GET /api/me` on app load to check auth state.
 
-**Public (no auth required):** `/`, `/api/health`, `/error`, `/pictures/**`, `/receipts/**` (but receipts respect group membership implicitly — no one guesses random UUID filenames).
+**Public (no auth required):** `/`, `/api/health`, `/error`, `/pictures/**`, `/payment-qr/**`, `/receipts/**` (but receipts respect group membership implicitly — no one guesses random UUID filenames), and the OAuth bootstrap paths `/.well-known/**` and `/oauth2/**` (they do their own auth where needed).
 
 ## Errors
 

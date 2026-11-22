@@ -12,6 +12,9 @@ import org.springframework.stereotype.Component;
 import com.splitforce.expense.Expense;
 import com.splitforce.group.Group;
 import com.splitforce.group.GroupMember;
+import com.splitforce.oauth.OAuthAuthCode;
+import com.splitforce.oauth.OAuthClient;
+import com.splitforce.oauth.OAuthSigningKey;
 import com.splitforce.user.User;
 
 import software.amazon.awssdk.enhanced.dynamodb.DynamoDbTable;
@@ -20,6 +23,7 @@ import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.dynamodb.model.Projection;
 import software.amazon.awssdk.services.dynamodb.model.ProjectionType;
 import software.amazon.awssdk.services.dynamodb.model.ResourceInUseException;
+import software.amazon.awssdk.services.dynamodb.model.TimeToLiveSpecification;
 
 @Component
 @Order(1)
@@ -32,17 +36,26 @@ public class DynamoDbTableInitializer implements ApplicationRunner {
     private final DynamoDbTable<Group> groups;
     private final DynamoDbTable<GroupMember> members;
     private final DynamoDbTable<Expense> expenses;
+    private final DynamoDbTable<OAuthClient> oauthClients;
+    private final DynamoDbTable<OAuthAuthCode> oauthAuthCodes;
+    private final DynamoDbTable<OAuthSigningKey> oauthKeys;
 
     public DynamoDbTableInitializer(DynamoDbClient client,
                                     DynamoDbTable<User> users,
                                     DynamoDbTable<Group> groups,
                                     DynamoDbTable<GroupMember> members,
-                                    DynamoDbTable<Expense> expenses) {
+                                    DynamoDbTable<Expense> expenses,
+                                    DynamoDbTable<OAuthClient> oauthClients,
+                                    DynamoDbTable<OAuthAuthCode> oauthAuthCodes,
+                                    DynamoDbTable<OAuthSigningKey> oauthKeys) {
         this.client = client;
         this.users = users;
         this.groups = groups;
         this.members = members;
         this.expenses = expenses;
+        this.oauthClients = oauthClients;
+        this.oauthAuthCodes = oauthAuthCodes;
+        this.oauthKeys = oauthKeys;
     }
 
     @Override
@@ -52,6 +65,21 @@ public class DynamoDbTableInitializer implements ApplicationRunner {
         createIfMissing(existing, groups, (String) null);
         createIfMissing(existing, members, GroupMember.USER_GROUPS_INDEX);
         createIfMissing(existing, expenses, (String) null);
+        createIfMissing(existing, oauthClients, (String) null);
+        createIfMissing(existing, oauthAuthCodes, (String) null);
+        createIfMissing(existing, oauthKeys, (String) null);
+        enableTtl(oauthAuthCodes.tableName(), "expiresAt");
+    }
+
+    /** Best-effort: expired authorization codes are also rejected in code, so TTL is just cleanup. */
+    private void enableTtl(String tableName, String attribute) {
+        try {
+            client.updateTimeToLive(b -> b.tableName(tableName).timeToLiveSpecification(
+                    TimeToLiveSpecification.builder().enabled(true).attributeName(attribute).build()));
+            log.info("Enabled TTL on {}.{}", tableName, attribute);
+        } catch (RuntimeException e) {
+            log.debug("Could not enable TTL on {} (already set or unsupported): {}", tableName, e.toString());
+        }
     }
 
     private <T> void createIfMissing(Set<String> existing, DynamoDbTable<T> table, String gsiName) {

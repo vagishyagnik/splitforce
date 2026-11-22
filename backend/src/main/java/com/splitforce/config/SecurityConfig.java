@@ -21,6 +21,7 @@ import org.springframework.security.web.authentication.AnonymousAuthenticationFi
 import org.springframework.security.web.authentication.HttpStatusEntryPoint;
 import org.springframework.security.web.savedrequest.NullRequestCache;
 import org.springframework.security.web.util.matcher.AntPathRequestMatcher;
+import org.springframework.security.web.util.matcher.AnyRequestMatcher;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
@@ -28,6 +29,11 @@ import org.springframework.web.filter.OncePerRequestFilter;
 
 import com.splitforce.auth.CookieAuthorizationRequestRepository;
 import com.splitforce.auth.CookieSecurityContextRepository;
+import com.splitforce.mcp.McpAuthenticationEntryPoint;
+import com.splitforce.mcp.McpJwtAuthenticationFilter;
+import com.splitforce.oauth.OAuthJwtService;
+import com.splitforce.oauth.OAuthLoginSuccessHandler;
+import com.splitforce.oauth.OAuthUrls;
 import com.splitforce.token.ApiTokenAuthenticationFilter;
 import com.splitforce.token.ApiTokenService;
 
@@ -47,6 +53,9 @@ public class SecurityConfig {
                                             CookieSecurityContextRepository sessionCookies,
                                             CookieAuthorizationRequestRepository authRequestCookies,
                                             ApiTokenService apiTokens,
+                                            OAuthJwtService oauthJwt,
+                                            OAuthLoginSuccessHandler oauthLoginSuccessHandler,
+                                            OAuthUrls oauthUrls,
                                             @Value("${app.auth.cookie-secure:false}") boolean secure,
                                             @Value("${spring.security.oauth2.client.registration.google.client-id}") String clientId,
                                             @Value("${spring.security.oauth2.client.registration.google.client-secret}") String clientSecret)
@@ -63,16 +72,27 @@ public class SecurityConfig {
             .requestCache(cache -> cache.requestCache(new NullRequestCache()))
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers("/", "/api/health", "/error", "/pictures/**", "/payment-qr/**").permitAll()
+                // OAuth discovery, registration, authorize and token endpoints bootstrap MCP clients
+                // before they hold any credentials; they do their own auth where needed.
+                .requestMatchers("/.well-known/**", "/oauth2/**").permitAll()
                 .requestMatchers("/api/**", "/receipts/**").authenticated()
                 .anyRequest().permitAll()
             )
             .exceptionHandling(ex -> ex
-                .authenticationEntryPoint(new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED))
+                // The MCP endpoint answers 401s with an RFC 9728 discovery challenge; everything else is a
+                // plain 401. Both are registered as matcher-scoped entry points (most specific first) so
+                // Spring builds a DelegatingAuthenticationEntryPoint — setting a global entry point instead
+                // would override these mappings entirely.
+                .defaultAuthenticationEntryPointFor(new McpAuthenticationEntryPoint(oauthUrls),
+                        new AntPathRequestMatcher("/api/mcp"))
+                .defaultAuthenticationEntryPointFor(new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED),
+                        AnyRequestMatcher.INSTANCE)
             )
             .oauth2Login(oauth -> oauth
                 .authorizationEndpoint(endpoint -> endpoint.authorizationRequestRepository(authRequestCookies))
                 .userInfoEndpoint(userInfo -> userInfo.oidcUserService(verifiedEmailOnly()))
-                .defaultSuccessUrl(frontendUrl + "/app/activities", true)
+                // Resumes a parked /oauth2/authorize request when present, else lands on the web app.
+                .successHandler(oauthLoginSuccessHandler)
                 .failureUrl(frontendUrl + "/?login=failed")
             )
             .logout(logout -> logout
@@ -83,6 +103,8 @@ public class SecurityConfig {
             )
             // Bearer tokens (MCP and other API clients) override whatever the cookie loaded.
             .addFilterBefore(new ApiTokenAuthenticationFilter(apiTokens), AnonymousAuthenticationFilter.class)
+            // OAuth JWTs (MCP over HTTP) are validated first; non-JWT bearers fall through to the PAT filter.
+            .addFilterBefore(new McpJwtAuthenticationFilter(oauthJwt), ApiTokenAuthenticationFilter.class)
             // After authorization, so logout and the OAuth callback (which return earlier) aren't affected.
             .addFilterAfter(new OncePerRequestFilter() {
                 @Override
