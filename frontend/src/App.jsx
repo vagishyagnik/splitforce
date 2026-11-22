@@ -9,6 +9,7 @@ import AddExpense from './routes/AddExpense.jsx'
 import Notes from './routes/Notes.jsx'
 import Create from './routes/Create.jsx'
 import Profile from './routes/Profile.jsx'
+import UserProfile from './routes/UserProfile.jsx'
 import NotFound from './routes/NotFound.jsx'
 
 export default function App() {
@@ -32,6 +33,7 @@ export default function App() {
           <Route path="activities/:groupId/notes" element={<Notes />} />
           <Route path="create" element={<Create />} />
           <Route path="profile" element={<Profile />} />
+          <Route path="users/:userId" element={<UserProfile />} />
         </Route>
         <Route path="*" element={<NotFound />} />
       </Routes>

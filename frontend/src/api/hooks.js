@@ -8,6 +8,7 @@ export const qk = {
   group: (id) => ['groups', id],
   contacts: ['me', 'contacts'],
   apiTokens: ['me', 'tokens'],
+  userProfile: (id) => ['users', id],
 }
 
 // ---------- Me ----------
@@ -16,6 +17,15 @@ export function useMe() {
     queryKey: qk.me,
     queryFn: () => apiGet('/api/me'),
     staleTime: 60_000,
+  })
+}
+
+export function useUserProfile(userId) {
+  return useQuery({
+    queryKey: qk.userProfile(userId),
+    queryFn: () => apiGet(`/api/users/${userId}`),
+    enabled: !!userId,
+    retry: false,
   })
 }
 
@@ -119,6 +129,16 @@ export function useRenameGroup(groupId) {
       qc.invalidateQueries({ queryKey: qk.group(groupId) })
       qc.invalidateQueries({ queryKey: qk.activities })
       qc.invalidateQueries({ queryKey: qk.groups })
+    },
+  })
+}
+
+export function useUpdateMyNickname(groupId) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (nickname) => apiPatch(`/api/groups/${groupId}/members/me`, { nickname }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: qk.group(groupId) })
     },
   })
 }

@@ -442,25 +442,31 @@ function BalancesCard({ group, onAddMembers }) {
           const positive = m.net > 0
           return (
             <li key={m.userId} className="flex items-center gap-3 py-3">
-              <Avatar name={m.displayName} picture={m.picture} size="sm" />
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2 min-w-0">
-                  <span className="text-[15px] font-medium truncate">{m.displayName}</span>
-                  {m.you && (
-                    <Pill tone="sage" className="!text-[10px] !py-0.5">You</Pill>
-                  )}
-                  {m.placeholder && (
-                    <Pill tone="neutral" className="!text-[10px] !py-0.5">Not signed in</Pill>
-                  )}
+              <Link
+                to={`/app/users/${m.userId}`}
+                className="flex items-center gap-3 min-w-0 flex-1 rounded-xl -mx-1 px-1 py-0.5 hover:bg-ink/[0.03] transition-colors"
+                data-testid={`member-link-${m.userId}`}
+              >
+                <Avatar name={m.displayName} picture={m.picture} size="sm" />
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="text-[15px] font-medium truncate">{m.displayName}</span>
+                    {m.you && (
+                      <Pill tone="sage" className="!text-[10px] !py-0.5">You</Pill>
+                    )}
+                    {m.placeholder && (
+                      <Pill tone="neutral" className="!text-[10px] !py-0.5">Not signed in</Pill>
+                    )}
+                  </div>
+                  <div className="text-[12px] text-muted mt-0.5">
+                    {settled
+                      ? 'Settled'
+                      : positive
+                      ? 'Should receive'
+                      : 'Owes the group'}
+                  </div>
                 </div>
-                <div className="text-[12px] text-muted mt-0.5">
-                  {settled
-                    ? 'Settled'
-                    : positive
-                    ? 'Should receive'
-                    : 'Owes the group'}
-                </div>
-              </div>
+              </Link>
               <div className="text-right shrink-0">
                 <Money
                   value={Math.abs(m.net)}
@@ -526,9 +532,11 @@ function SettlementCard({ group, onSettle }) {
   )
 }
 
-// A person is "in" an expense if they paid for it or owe a share of it.
+// A person is "in" an expense if they paid for it or have a share of it.
+// shares holds each person's net (paid minus owed), so anyone who owes has a
+// negative value — presence of the key is what signals involvement, not its sign.
 function isIn(expense, userId) {
-  return expense.paidByUserId === userId || Number(expense.shares?.[userId]) > 0
+  return expense.paidByUserId === userId || (expense.shares != null && userId in expense.shares)
 }
 
 function ExpenseHistoryCard({ group, memberById, category, setCategory }) {

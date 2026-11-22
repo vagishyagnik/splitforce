@@ -8,7 +8,7 @@ import { Modal } from '../components/Modal.jsx'
 import { FieldError, Helper, Input, Label, Select } from '../components/Field.jsx'
 import { Pill } from '../components/Pill.jsx'
 import { ADDABLE_CURRENCIES, CURRENCY_LABEL } from '../util/currencies.js'
-import { useDeleteGroup, useMe, useRenameGroup, useSetFxRate, useDeleteFxRate } from '../api/hooks.js'
+import { useDeleteGroup, useMe, useRenameGroup, useSetFxRate, useDeleteFxRate, useUpdateMyNickname } from '../api/hooks.js'
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? 'http://localhost:9090'
 
@@ -23,6 +23,8 @@ export default function GroupSettingsPanel({ open, onClose, group }) {
     >
       {group && (
         <>
+          <NicknameSection group={group} />
+          <div className="mt-8" />
           <RenameSection group={group} />
           <div className="mt-8" />
           <CurrenciesSection group={group} />
@@ -167,6 +169,56 @@ function DangerZoneSection({ group, onClose }) {
           )}
         </div>
       </Modal>
+    </section>
+  )
+}
+
+function NicknameSection({ group }) {
+  const me = (group.members || []).find((m) => m.you)
+  const updateNick = useUpdateMyNickname(group.groupId)
+  const current = me?.nickname || ''
+  const [nick, setNick] = useState(current)
+
+  useEffect(() => setNick(me?.nickname || ''), [me?.nickname])
+
+  const dirty = nick.trim() !== current
+
+  const onSave = async () => {
+    try {
+      await updateNick.mutateAsync(nick.trim())
+      toast.success(nick.trim() ? 'Nickname updated' : 'Nickname cleared')
+    } catch (e) {
+      toast.error(e?.message || 'Could not update nickname')
+    }
+  }
+
+  return (
+    <section>
+      <h3 className="font-editorial text-[22px] leading-tight">Your nickname</h3>
+      <p className="mt-1 text-[13.5px] text-muted">
+        How your name shows in this group. Leave it blank to use your account name.
+      </p>
+      <div className="mt-3">
+        <Label htmlFor="group-nickname">Nickname in {group.name}</Label>
+        <div className="mt-2 flex items-center gap-2">
+          <Input
+            id="group-nickname"
+            value={nick}
+            maxLength={60}
+            placeholder={me?.displayName || 'Your name'}
+            onChange={(e) => setNick(e.target.value)}
+            data-testid="settings-nickname-input"
+          />
+          <Button
+            variant="ink"
+            onClick={onSave}
+            disabled={!dirty || updateNick.isPending}
+            data-testid="settings-nickname-save"
+          >
+            {updateNick.isPending ? 'Saving…' : 'Save'}
+          </Button>
+        </div>
+      </div>
     </section>
   )
 }

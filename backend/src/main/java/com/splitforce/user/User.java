@@ -15,6 +15,7 @@ public class User {
     private String userId;
     private String email;
     private String name;
+    private String upiId;
     private String picture;
     private String pictureContentType;
     private Long pictureUpdatedAt;
@@ -32,6 +33,9 @@ public class User {
 
     public String getName() { return name; }
     public void setName(String name) { this.name = name; }
+
+    public String getUpiId() { return upiId; }
+    public void setUpiId(String upiId) { this.upiId = upiId; }
 
     public String getPicture() { return picture; }
     public void setPicture(String picture) { this.picture = picture; }

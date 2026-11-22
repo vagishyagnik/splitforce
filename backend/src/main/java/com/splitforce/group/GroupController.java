@@ -223,6 +223,7 @@ public class GroupController {
             Map<String, Object> dto = new LinkedHashMap<>();
             dto.put("userId", m.getUserId());
             dto.put("displayName", displayName);
+            dto.put("nickname", m.getNickname());
             dto.put("active", m.isActive());
             dto.put("you", me.getUserId().equals(m.getUserId()));
             dto.put("net", net);
@@ -334,6 +335,10 @@ public class GroupController {
      * The name stored on the membership row is only a fallback for users without one.
      */
     private static String liveName(GroupMember m, Optional<User> user) {
+        // A self-chosen per-group nickname wins; otherwise the member's live account name, then the join-time name.
+        if (m.getNickname() != null && !m.getNickname().isBlank()) {
+            return m.getNickname().trim();
+        }
         return user.map(User::getName)
                 .filter(n -> !n.isBlank())
                 .orElse(m.getDisplayName());
@@ -369,6 +374,34 @@ public class GroupController {
         out.put("notes", g.getNotes());
         out.put("notesUpdatedAt", g.getNotesUpdatedAt());
         out.put("notesUpdatedByUserId", g.getNotesUpdatedByUserId());
+        return out;
+    }
+
+    private static final int NICKNAME_MAX_LEN = 60;
+
+    /** Set or clear your own nickname for this group. Only ever affects the caller's membership row. */
+    @PatchMapping("/{groupId}/members/me")
+    public Map<String, Object> updateMyNickname(@AuthenticationPrincipal OAuth2User principal,
+                                                @PathVariable("groupId") String groupId,
+                                                @RequestBody MemberNicknameRequest req) {
+        User me = userService.resolveOrCreate(principal);
+        requireMemberGroup(me, groupId);
+        GroupMember mine = groupMembers.listByGroup(groupId).stream()
+                .filter(m -> me.getUserId().equals(m.getUserId()))
+                .findFirst()
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.FORBIDDEN, "not a member of this group"));
+
+        String nick = req == null || req.nickname == null ? "" : req.nickname.trim();
+        if (nick.length() > NICKNAME_MAX_LEN) {
+            throw badRequest("nickname must be " + NICKNAME_MAX_LEN + " characters or fewer");
+        }
+        mine.setNickname(nick.isEmpty() ? null : nick);
+        groupMembers.save(mine);
+
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("userId", mine.getUserId());
+        out.put("nickname", mine.getNickname());
+        out.put("displayName", liveName(mine, users.findById(mine.getUserId())));
         return out;
     }
 
@@ -1013,6 +1046,10 @@ public class GroupController {
 
     public static class UpdateNotesRequest {
         public String notes;
+    }
+
+    public static class MemberNicknameRequest {
+        public String nickname;
     }
 
     public static class UpdateExpenseRequest {

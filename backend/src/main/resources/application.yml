@@ -28,6 +28,10 @@ app:
   public-url: ${PUBLIC_URL:}
   # Shared with CloudFront, which sends it as X-Origin-Verify; requests without it are rejected. Empty = off.
   origin-secret: ${ORIGIN_SECRET:}
+  # Key for encrypting sensitive fields at rest (UPI IDs). Defaults to the session secret;
+  # set FIELD_SECRET to rotate it independently. Changing it makes existing encrypted values unreadable.
+  crypto:
+    secret: ${FIELD_SECRET:${SESSION_SECRET:local-dev-only-session-secret-0123456789}}
   auth:
     # HMAC key for the session + OAuth state cookies. Must be at least 32 bytes; set a random one in AWS.
     secret: ${SESSION_SECRET:local-dev-only-session-secret-0123456789}

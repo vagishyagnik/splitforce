@@ -15,6 +15,8 @@ import { EmptyState } from '../components/EmptyState.jsx'
 import ApiTokensCard from './ApiTokensCard.jsx'
 
 const MAX_PICTURE_BYTES = 4 * 1024 * 1024
+// UPI VPA: handle@psp, e.g. name@okhdfcbank
+const UPI_RE = /^[a-zA-Z0-9.\-_]{2,256}@[a-zA-Z]{2,64}$/
 
 export default function Profile() {
   const { user, logout, refresh } = useAuth()
@@ -24,6 +26,8 @@ export default function Profile() {
 
   const [editingName, setEditingName] = useState(false)
   const [draftName, setDraftName] = useState('')
+  const [editingUpi, setEditingUpi] = useState(false)
+  const [draftUpi, setDraftUpi] = useState('')
   const fileRef = useRef(null)
 
   const startNameEdit = () => {
@@ -53,6 +57,36 @@ export default function Profile() {
       cancelNameEdit()
     } catch (e) {
       toast.error(e?.message || 'Could not update name')
+    }
+  }
+
+  const startUpiEdit = () => {
+    setDraftUpi(user?.upiId || '')
+    setEditingUpi(true)
+  }
+
+  const cancelUpiEdit = () => {
+    setEditingUpi(false)
+    setDraftUpi('')
+  }
+
+  const saveUpi = async () => {
+    const trimmed = draftUpi.trim()
+    if (trimmed && !UPI_RE.test(trimmed)) {
+      toast.error('That doesn’t look like a UPI ID (e.g. name@okhdfcbank).')
+      return
+    }
+    if (trimmed === (user?.upiId || '')) {
+      cancelUpiEdit()
+      return
+    }
+    try {
+      await updateMe.mutateAsync({ upiId: trimmed })
+      await refresh()
+      toast.success(trimmed ? 'UPI ID saved' : 'UPI ID removed')
+      cancelUpiEdit()
+    } catch (e) {
+      toast.error(e?.message || 'Could not save UPI ID')
     }
   }
 
@@ -174,6 +208,44 @@ export default function Profile() {
           <div className="text-[14px] text-muted mt-1 break-all">{user?.email}</div>
           <div className="mt-3 inline-flex">
             <Pill tone="sage">Signed in with Google</Pill>
+          </div>
+
+          <div className="mt-5 border-t border-hairline pt-4">
+            <div className="label-caps">UPI ID</div>
+            {editingUpi ? (
+              <div className="mt-2 flex items-center gap-2 justify-center sm:justify-start">
+                <Input
+                  value={draftUpi}
+                  onChange={(e) => setDraftUpi(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') { e.preventDefault(); saveUpi() }
+                    if (e.key === 'Escape') { e.preventDefault(); cancelUpiEdit() }
+                  }}
+                  placeholder="name@okhdfcbank"
+                  maxLength={257}
+                  autoFocus
+                  className="text-[15px]"
+                  data-testid="profile-upi-input"
+                />
+                <IconButton onClick={saveUpi} disabled={updateMe.isPending} aria-label="Save UPI ID" data-testid="profile-upi-save">
+                  <Check size={16} />
+                </IconButton>
+                <IconButton onClick={cancelUpiEdit} aria-label="Cancel" data-testid="profile-upi-cancel">
+                  <X size={16} />
+                </IconButton>
+              </div>
+            ) : (
+              <div className="mt-2 flex items-center gap-2 justify-center sm:justify-start">
+                {user?.upiId ? (
+                  <span className="text-[15px] text-ink break-all" data-testid="profile-upi-value">{user.upiId}</span>
+                ) : (
+                  <span className="text-[14px] text-muted">Add a UPI ID so group-mates can pay you back.</span>
+                )}
+                <IconButton onClick={startUpiEdit} aria-label="Edit UPI ID" data-testid="profile-upi-edit">
+                  <Pencil size={14} />
+                </IconButton>
+              </div>
+            )}
           </div>
         </div>
       </Card>

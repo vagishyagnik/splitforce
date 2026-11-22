@@ -78,11 +78,13 @@ Returns the signed-in user's profile.
   "userId": "u_xxx",
   "email": "you@example.com",
   "name": "Your Name",
+  "upiId": "you@okhdfcbank",
   "picture": "http://localhost:9090/pictures/u_xxx?v=1690000000000"
 }
 ```
 
 - `picture` may be an uploaded server URL (`/pictures/<userId>?v=<epoch>`) or the Google-provided URL for users who never uploaded — always safe to `<img src>` directly.
+- `upiId` is `null` if unset. Stored encrypted at rest (AES-256-GCM); only returned decrypted to the owner here and to group-mates via `GET /api/users/{userId}`.
 - **401** when session is missing / expired. Trigger a login redirect.
 
 ### `PATCH /api/me`
@@ -90,11 +92,51 @@ Update the current user's profile.
 
 **Request**
 ```json
-{ "name": "New Name" }
+{ "name": "New Name", "upiId": "you@okhdfcbank" }
 ```
-Only `name` is settable. Email is locked (from Google).
+`name` and `upiId` are settable (both optional; send either). Email is locked (from Google).
+An empty-string `upiId` clears it. UPI must match `handle@psp` (e.g. `name@okhdfcbank`).
 
 **Response 200** — same shape as `GET /api/me`.
+
+**Errors:** `400` invalid UPI ID.
+
+### `GET /api/users/{userId}`
+A group-mate's profile. Readable **only** if you share at least one group with them (otherwise `404`,
+so profiles can't be enumerated). Requesting your own `userId` always works.
+
+**Response 200**
+```json
+{
+  "userId": "u_yyy",
+  "name": "Their Name",
+  "email": "them@example.com",
+  "upiId": "them@okaxis",
+  "picture": "http://localhost:9090/pictures/u_yyy?v=...",
+  "placeholder": false,
+  "isYou": false,
+  "commonGroups": [{ "groupId": "abc", "name": "Goa trip", "type": "trip", "currency": "INR" }]
+}
+```
+- `email` is `null` for placeholder (not-signed-in) members.
+- **404** when no shared group exists or the user is unknown.
+
+### `PATCH /api/groups/{groupId}/members/me`
+Set or clear **your own** nickname for one group. Never affects any other member. The nickname
+overrides your live account name in that group's member list, balances and expenses.
+
+**Request**
+```json
+{ "nickname": "Captain" }
+```
+Empty string clears it (falls back to your account name). Max 60 characters.
+
+**Response 200**
+```json
+{ "userId": "u_xxx", "nickname": "Captain", "displayName": "Captain" }
+```
+
+**Errors:** `400` nickname too long · `403` not a member of this group.
 
 ### `POST /api/me/picture`
 Upload a new profile picture.

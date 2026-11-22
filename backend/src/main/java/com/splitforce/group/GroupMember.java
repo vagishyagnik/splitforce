@@ -12,6 +12,7 @@ public class GroupMember {
     private String groupId;
     private String userId;
     private String displayName;
+    private String nickname;
     private boolean active;
     private String joinedAt;
 
@@ -26,6 +27,10 @@ public class GroupMember {
 
     public String getDisplayName() { return displayName; }
     public void setDisplayName(String displayName) { this.displayName = displayName; }
+
+    /** Per-group self-chosen nickname; when set it overrides the member's live account name in this group. */
+    public String getNickname() { return nickname; }
+    public void setNickname(String nickname) { this.nickname = nickname; }
 
     public boolean isActive() { return active; }
     public void setActive(boolean active) { this.active = active; }

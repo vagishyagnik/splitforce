@@ -54,8 +54,15 @@ public class UserController {
                                                        @RequestBody Map<String, String> body) {
         if (principal == null) return ResponseEntity.status(401).build();
         User me = userService.resolveOrCreate(principal);
-        if (body.containsKey("name")) {
-            userService.updateName(me, body.get("name"));
+        try {
+            if (body.containsKey("name")) {
+                userService.updateName(me, body.get("name"));
+            }
+            if (body.containsKey("upiId")) {
+                userService.updateUpiId(me, body.get("upiId"));
+            }
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }
         return ResponseEntity.ok(toBody(me));
     }
@@ -102,6 +109,7 @@ public class UserController {
         body.put("userId", user.getUserId());
         body.put("email", user.getEmail());
         body.put("name", user.getName());
+        body.put("upiId", userService.plainUpiId(user));
         body.put("picture", userService.resolvePictureUrl(user));
         return body;
     }

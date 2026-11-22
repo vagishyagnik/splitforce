@@ -41,12 +41,15 @@ public class UserService {
 
     private final UserRepository users;
     private final ProfilePictureStore pictureStore;
+    private final com.splitforce.crypto.FieldCipher fieldCipher;
     private final String publicUrl;
 
     public UserService(UserRepository users, ProfilePictureStore pictureStore,
+                       com.splitforce.crypto.FieldCipher fieldCipher,
                        @Value("${app.public-url:}") String publicUrl) {
         this.users = users;
         this.pictureStore = pictureStore;
+        this.fieldCipher = fieldCipher;
         this.publicUrl = publicUrl.endsWith("/") ? publicUrl.substring(0, publicUrl.length() - 1) : publicUrl;
     }
 
@@ -141,6 +144,31 @@ public class UserService {
         user.setName(trimmed);
         users.save(user);
         return user;
+    }
+
+    /** A UPI VPA: handle@psp, e.g. "name@okhdfcbank". Empty/blank clears it. */
+    private static final java.util.regex.Pattern UPI_PATTERN =
+            java.util.regex.Pattern.compile("^[a-zA-Z0-9.\\-_]{2,256}@[a-zA-Z]{2,64}$");
+
+    public User updateUpiId(User user, String newUpiId) {
+        String trimmed = newUpiId == null ? "" : newUpiId.trim();
+        if (trimmed.isEmpty()) {
+            user.setUpiId(null);
+        } else {
+            if (!UPI_PATTERN.matcher(trimmed).matches()) {
+                throw new IllegalArgumentException("invalid UPI ID (expected something like name@bank)");
+            }
+            // Stored encrypted at rest; only decrypted when read back for display.
+            user.setUpiId(fieldCipher.encrypt(trimmed));
+        }
+        users.save(user);
+        return user;
+    }
+
+    /** The user's UPI ID in plaintext for display, or null if unset. */
+    public String plainUpiId(User user) {
+        if (user == null) return null;
+        return fieldCipher.decrypt(user.getUpiId());
     }
 
     public User applyPictureUpload(User user, String contentType) {
