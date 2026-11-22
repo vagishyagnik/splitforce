@@ -11,7 +11,7 @@ import { Card } from '../components/Card.jsx'
 import { Input } from '../components/Field.jsx'
 import { GroupTypeTag } from '../components/GroupTypeTag.jsx'
 import { Pill } from '../components/Pill.jsx'
-import { UpiLogo } from '../components/UpiLogo.jsx'
+import upiLogo from '../assets/upi-logo.svg'
 import { Skeleton } from '../components/Skeleton.jsx'
 import { EmptyState } from '../components/EmptyState.jsx'
 import McpConnectCard from './McpConnectCard.jsx'
@@ -265,9 +265,8 @@ export default function Profile() {
           </div>
 
           <div className="mt-5 border-t border-hairline pt-4">
-            <div className="label-caps flex items-center gap-1.5 justify-center sm:justify-start">
-              <UpiLogo height={14} className="text-ink" />
-              <span>ID</span>
+            <div className="flex justify-center sm:justify-start">
+              <img src={upiLogo} alt="UPI ID" className="h-5 w-auto" />
             </div>
             {editingUpi ? (
               <div className="mt-2 flex items-center gap-2 justify-center sm:justify-start">
@@ -294,13 +293,7 @@ export default function Profile() {
             ) : (
               <div className="mt-2 flex items-center gap-2 justify-center sm:justify-start">
                 {user?.upiId ? (
-                  <span
-                    className="inline-flex items-center gap-2 rounded-full border border-hairline bg-mist/50 py-1 pl-2 pr-3 text-[15px] text-ink break-all"
-                    data-testid="profile-upi-value"
-                  >
-                    <UpiLogo height={15} className="shrink-0 text-ink" />
-                    {user.upiId}
-                  </span>
+                  <span className="text-[15px] text-ink break-all" data-testid="profile-upi-value">{user.upiId}</span>
                 ) : (
                   <span className="text-[14px] text-muted">Add a UPI ID so group-mates can pay you back.</span>
                 )}
