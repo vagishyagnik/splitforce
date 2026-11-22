@@ -43,6 +43,26 @@ resource "aws_cloudfront_origin_access_control" "web" {
   signing_protocol                  = "sigv4"
 }
 
+# Lambda Function URLs rename WWW-Authenticate to x-amzn-remapped-www-authenticate (it's a
+# reserved response header). MCP clients read the standard header on the 401 to discover the
+# OAuth flow (RFC 9728), so restore the name on the way back to the viewer.
+resource "aws_cloudfront_function" "restore_www_authenticate" {
+  name    = "splitforce-restore-www-authenticate"
+  runtime = "cloudfront-js-2.0"
+  publish = true
+  code    = <<-JS
+    function handler(event) {
+      var h = event.response.headers;
+      var remapped = h['x-amzn-remapped-www-authenticate'];
+      if (remapped) {
+        h['www-authenticate'] = remapped;
+        delete h['x-amzn-remapped-www-authenticate'];
+      }
+      return event.response;
+    }
+  JS
+}
+
 # React Router paths (/app/groups/...) have no file extension; serve index.html for them.
 # Attached only to the S3 behavior, so API 404s stay JSON.
 resource "aws_cloudfront_function" "spa" {
@@ -122,6 +142,11 @@ resource "aws_cloudfront_distribution" "site" {
       cache_policy_id          = data.aws_cloudfront_cache_policy.disabled.id
       origin_request_policy_id = data.aws_cloudfront_origin_request_policy.all_except_host.id
       compress                 = true
+
+      function_association {
+        event_type   = "viewer-response"
+        function_arn = aws_cloudfront_function.restore_www_authenticate.arn
+      }
     }
   }
 
